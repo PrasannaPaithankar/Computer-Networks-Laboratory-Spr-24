@@ -12,6 +12,7 @@ int main(int argc, char *argv[])
         perror("m_socket");
         return errno;
     }
+    printf("Socket created\n");
 
     src_addr.sin_family = AF_INET;
     src_addr.sin_port = htons(atoi(argv[1]));

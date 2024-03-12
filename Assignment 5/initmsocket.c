@@ -87,29 +87,33 @@ main (int argc, char *argv[])
         perror("pthread_create");
         exit(1);
     }
+    logger(LOGFILE, "Rthread created");
 
     if (pthread_create(&S, NULL, Sthread, (void *)shmSM) != 0)
     {
         perror("pthread_create");
         exit(1);
     }
+    logger(LOGFILE, "Sthread created");
 
     if (pthread_create(&G, NULL, Gthread, (void *)shmSM) != 0)
     {
         perror("pthread_create");
         exit(1);
     }
+    logger(LOGFILE, "Gthread created");
 
     while (1)
     {
-        if (sem_wait(&shmSOCK_INFO->sem1) == -1)
+        if (sem_wait(&(shmSOCK_INFO->sem1)) == -1)
         {
             perror("sem_wait");
-            exit(1);
+            continue;
         }
 
         if (shmSOCK_INFO->sockfd == 0 && shmSOCK_INFO->addr.sin_port == 0 && shmSOCK_INFO->err == 0)
         {
+            logger(LOGFILE, "Creating socket");
             shmSOCK_INFO->sockfd = socket(AF_INET, SOCK_DGRAM, 0);
             if (shmSOCK_INFO->sockfd == -1)
             {
@@ -124,6 +128,7 @@ main (int argc, char *argv[])
 
         else if (shmSOCK_INFO->sockfd != 0 && shmSOCK_INFO->addr.sin_port != 0 && shmSOCK_INFO->addr.sin_addr.s_addr != 0)
         {
+            logger(LOGFILE, "Binding socket");
             if (bind(shmSOCK_INFO->sockfd, (struct sockaddr *)&shmSOCK_INFO->addr, sizeof(shmSOCK_INFO->addr)) == -1)
             {
                 perror("bind");
@@ -137,6 +142,7 @@ main (int argc, char *argv[])
 
         else if (shmSOCK_INFO->sockfd != 0 && shmSOCK_INFO->addr.sin_port == 0 && shmSOCK_INFO->addr.sin_addr.s_addr == 0)
         {
+            logger(LOGFILE, "Closing socket");
             if (close(shmSOCK_INFO->sockfd) == -1)
             {
                 perror("close");
@@ -159,10 +165,10 @@ main (int argc, char *argv[])
             logger(LOGFILE, strerror(shmSOCK_INFO->err));
         }
 
-        if (sem_post(&shmSOCK_INFO->sem2) == -1)
+        if (sem_post(&(shmSOCK_INFO->sem2)) == -1)
         {
             perror("sem_post");
-            exit(1);
+            continue;
         }
     }
 
@@ -171,18 +177,21 @@ main (int argc, char *argv[])
         perror("pthread_join");
         exit(1);
     }
+    logger(LOGFILE, "Rthread joined");
 
     if (pthread_join(S, NULL) != 0)
     {
         perror("pthread_join");
         exit(1);
     }
+    logger(LOGFILE, "Sthread joined");
 
     if (pthread_join(G, NULL) != 0)
     {
         perror("pthread_join");
         exit(1);
     }
+    logger(LOGFILE, "Gthread joined");
 
     if (sem_destroy(&shmSOCK_INFO->sem1) == -1)
     {

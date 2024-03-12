@@ -8,7 +8,7 @@ m_socket (int domain, int type, int protocol)
     int sizeSM = N * sizeof(struct SM);
     int sizeSOCK_INFO = sizeof(struct SOCK_INFO);
 
-    int shmidSM = shm_open(KEY_SM, O_CREAT | O_RDWR, 0666);
+    int shmidSM = shm_open(KEY_SM, O_RDWR, 0);
     if (shmidSM == -1)
     {
         perror("shm_open");
@@ -22,7 +22,7 @@ m_socket (int domain, int type, int protocol)
         retval = errno;
     }
 
-    int shmidSOCK_INFO = shm_open(KEY_SOCK_INFO, O_CREAT | O_RDWR, 0666);
+    int shmidSOCK_INFO = shm_open(KEY_SOCK_INFO, O_RDWR, 0);
     if (shmidSOCK_INFO == -1)
     {
         perror("shm_open");
@@ -36,7 +36,9 @@ m_socket (int domain, int type, int protocol)
         retval = errno;
     }
 
-    memset(shmSOCK_INFO, 0, sizeSOCK_INFO);
+    shmSOCK_INFO->sockfd = 0;
+    memset(&shmSOCK_INFO->addr, 0, sizeof(struct sockaddr_in));
+    shmSOCK_INFO->err = 0;
 
     int i;
     for (i = 0; i < N; i++)
@@ -45,6 +47,7 @@ m_socket (int domain, int type, int protocol)
         {
             shmSM[i].isFree = 0;
             shmSM[i].pid = getpid();
+            logger(LOGFILE, "Free slot found at index %d", i);
             break;
         }
     }
@@ -70,18 +73,6 @@ m_socket (int domain, int type, int protocol)
     shmSM[i].UDPfd = shmSOCK_INFO->sockfd;
     retval = shmSOCK_INFO->err;
 
-    if (shm_unlink(KEY_SM) == -1)
-    {
-        perror("shm_unlink");
-        retval = errno;
-    }
-
-    if (shm_unlink(KEY_SOCK_INFO) == -1)
-    {
-        perror("shm_unlink");
-        retval = errno;
-    }
-
     return retval;
 }
 
@@ -93,7 +84,7 @@ m_bind (int sockfd, const struct sockaddr *srcaddr, socklen_t srcaddrlen, const 
     int sizeSM = N * sizeof(struct SM);
     int sizeSOCK_INFO = sizeof(struct SOCK_INFO);
 
-    int shmidSM = shm_open(KEY_SM, O_CREAT | O_RDWR, 0666);
+    int shmidSM = shm_open(KEY_SM, O_RDWR, 0);
     if (shmidSM == -1)
     {
         perror("shm_open");
@@ -107,7 +98,7 @@ m_bind (int sockfd, const struct sockaddr *srcaddr, socklen_t srcaddrlen, const 
         retval = errno;
     }
 
-    int shmidSOCK_INFO = shm_open(KEY_SOCK_INFO, O_CREAT | O_RDWR, 0666);
+    int shmidSOCK_INFO = shm_open(KEY_SOCK_INFO, O_RDWR, 0);
     if (shmidSOCK_INFO == -1)
     {
         perror("shm_open");
@@ -120,8 +111,6 @@ m_bind (int sockfd, const struct sockaddr *srcaddr, socklen_t srcaddrlen, const 
         perror("mmap");
         retval = errno;
     }
-
-    memset(shmSOCK_INFO, 0, sizeSOCK_INFO);
 
     shmSOCK_INFO->sockfd = sockfd;
     shmSOCK_INFO->addr = *(struct sockaddr_in *)srcaddr;
@@ -148,19 +137,6 @@ m_bind (int sockfd, const struct sockaddr *srcaddr, socklen_t srcaddrlen, const 
     }
 
     retval = shmSOCK_INFO->err;
-
-    if (shm_unlink(KEY_SM) == -1)
-    {
-        perror("shm_unlink");
-        retval = errno;
-    }
-
-    if (shm_unlink(KEY_SOCK_INFO) == -1)
-    {
-        perror("shm_unlink");
-        retval = errno;
-    }
-
     return retval;
 }
 
@@ -222,12 +198,6 @@ m_sendto (int sockfd, const void *buf, size_t len, int flags, const struct socka
         errno = ENOTBOUND;
     }
 
-    if (shm_unlink(KEY_SM) == -1)
-    {
-        perror("shm_unlink");
-        retval = errno;
-    }
-
     return retval;
 }
 
@@ -284,12 +254,6 @@ m_recvfrom (int sockfd, void *buf, size_t len, int flags, struct sockaddr *src_a
         errno = ENOTBOUND;
     }
 
-    if (shm_unlink(KEY_SM) == -1)
-    {
-        perror("shm_unlink");
-        retval = errno;
-    }
-
     return retval;
 }
 
@@ -330,7 +294,8 @@ m_close (int sockfd)
         retval = errno;
     }
 
-    memset(shmSOCK_INFO, 0, sizeSOCK_INFO);
+    memset(&shmSOCK_INFO->addr, 0, sizeof(struct sockaddr_in));
+    shmSOCK_INFO->err = 0;
     shmSOCK_INFO->sockfd = sockfd;
 
     int i;
@@ -363,19 +328,6 @@ m_close (int sockfd)
     }
 
     retval = shmSOCK_INFO->err;
-
-    if (shm_unlink(KEY_SM) == -1)
-    {
-        perror("shm_unlink");
-        retval = errno;
-    }
-
-    if (shm_unlink(KEY_SOCK_INFO) == -1)
-    {
-        perror("shm_unlink");
-        retval = errno;
-    }
-
     return retval;
 }
 
