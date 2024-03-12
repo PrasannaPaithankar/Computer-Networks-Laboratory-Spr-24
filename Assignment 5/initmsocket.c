@@ -121,6 +121,25 @@ main (int argc, char *argv[])
             }
         }
 
+        else if (shmSOCK_INFO->sockfd != 0 && shmSOCK_INFO->addr.sin_port == 0 && shmSOCK_INFO->addr.sin_addr.s_addr == 0)
+        {
+            if (close(shmSOCK_INFO->sockfd) == -1)
+            {
+                perror("close");
+                shmSOCK_INFO->err = errno;
+            }
+            else
+            {
+                shmSOCK_INFO->err = 0;
+            }
+        }
+
+        else
+        {
+            logger(LOGFILE, "Invalid request");
+            shmSOCK_INFO->err = EINVAL;
+        }
+
         if (shmSOCK_INFO->err != 0)
         {
             logger(LOGFILE, "Error: %s", strerror(shmSOCK_INFO->err));

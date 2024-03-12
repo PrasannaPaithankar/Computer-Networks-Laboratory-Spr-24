@@ -44,6 +44,10 @@
 #define N 25
 #endif
 
+#ifndef ENOTBOUND
+#define ENOTBOUND 989
+#endif
+
 #ifndef FORMAT
 #define FORMAT
 #define MSG "MSG"
@@ -52,6 +56,7 @@
 #endif
 
 #ifndef KEYS
+#define KEYS
 #define KEY_SM "pipiSM"
 #define KEY_SOCK_INFO "pipiSOCK_INFO"
 #endif
