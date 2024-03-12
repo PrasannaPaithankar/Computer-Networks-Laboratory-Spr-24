@@ -35,6 +35,20 @@ main (int argc, char *argv[])
         exit(1);
     }
 
+    for (int i = 0; i < N; i++)
+    {
+        shmSM[i].isFree = 1;
+        shmSM[i].pid = 0;
+        shmSM[i].UDPfd = 0;
+        memset(&shmSM[i].addr, 0, sizeof(shmSM[i].addr));
+        memset(shmSM[i].sbuff, 0, sizeof(shmSM[i].sbuff));
+        memset(shmSM[i].rbuff, 0, sizeof(shmSM[i].rbuff));
+        memset(&shmSM[i].swnd, 0, sizeof(shmSM[i].swnd));
+        memset(&shmSM[i].rwnd, 0, sizeof(shmSM[i].rwnd));
+        shmSM[i].swnd.size = 10;
+        shmSM[i].rwnd.size = 5;
+    }
+
     int shmidSOCK_INFO = shm_open(KEY_SOCK_INFO, O_CREAT | O_RDWR, 0666);
     if (shmidSOCK_INFO == -1)
     {
@@ -80,7 +94,7 @@ main (int argc, char *argv[])
         exit(1);
     }
 
-    if (pthread_create(&G, NULL, Gthread, (void *)shmSOCK_INFO) != 0)
+    if (pthread_create(&G, NULL, Gthread, (void *)shmSM) != 0)
     {
         perror("pthread_create");
         exit(1);
@@ -142,7 +156,7 @@ main (int argc, char *argv[])
 
         if (shmSOCK_INFO->err != 0)
         {
-            logger(LOGFILE, "Error: %s", strerror(shmSOCK_INFO->err));
+            logger(LOGFILE, strerror(shmSOCK_INFO->err));
         }
 
         if (sem_post(&shmSOCK_INFO->sem2) == -1)
@@ -170,20 +184,41 @@ main (int argc, char *argv[])
         exit(1);
     }
 
-    // Detach shared memory
-    if (shmdt(shmSM) == -1)
+    if (sem_destroy(&shmSOCK_INFO->sem1) == -1)
     {
-        perror("shmdt");
+        perror("sem_destroy");
         exit(1);
     }
 
-    if (shmdt(shmSOCK_INFO) == -1)
+    if (sem_destroy(&shmSOCK_INFO->sem2) == -1)
     {
-        perror("shmdt");
+        perror("sem_destroy");
         exit(1);
     }
 
-    
+    if (munmap(shmSM, sizeSM) == -1)
+    {
+        perror("munmap");
+        exit(1);
+    }
+
+    if (munmap(shmSOCK_INFO, sizeSOCK_INFO) == -1)
+    {
+        perror("munmap");
+        exit(1);
+    }
+
+    if (shm_unlink(KEY_SM) == -1)
+    {
+        perror("shm_unlink");
+        exit(1);
+    }
+
+    if (shm_unlink(KEY_SOCK_INFO) == -1)
+    {
+        perror("shm_unlink");
+        exit(1);
+    }
 
     return 0;
 }
@@ -191,77 +226,176 @@ main (int argc, char *argv[])
 void *
 Rthread (void *arg)
 {
+    int err = 0;
+    int nospace = 0;
     struct SM *shm = (struct SM *)arg;
-    fd_set readfds;
-    struct timeval tv;
-    int maxfd = 0;
-    int retval;
 
-    int n;
-    char buffer[MAXBUFLEN];
-    char message[MAXBUFLEN];
+    struct epoll_event ev, events[25];
+    int nfds, epollfd;
+
+    epollfd = epoll_create(25);
+    if (epollfd == -1)
+    {
+        perror("epoll_create");
+    }
+
+    int i;
+    for (i = 0; i < N; i++)
+    {
+        if (shm[i].isFree == 0)
+        {
+            ev.events = EPOLLIN;
+            ev.data.fd = shm[i].UDPfd;
+            if (epoll_ctl(epollfd, EPOLL_CTL_ADD, shm[i].UDPfd, &ev) == -1)
+            {
+                perror("epoll_ctl");
+                err = errno;
+            }
+        }
+    }
 
     while (1)
     {
-        FD_ZERO(&readfds);
-        tv.tv_sec = T;
-        tv.tv_usec = 0;
-
-        for (int i = 0; i < N; i++)
+        nfds = epoll_wait(epollfd, events, 25, T*1000);
+        if (nfds == -1)
         {
-            if (shm[i].isFree == 0)
+            perror("epoll_wait");
+            continue;
+        }
+
+        else if (nfds > 0)
+        {
+            for (i = 0; i < nfds; i++)
             {
-                FD_SET(shm[i].UDPfd, &readfds);
-                if (shm[i].UDPfd > maxfd)
+                if (events[i].events & EPOLLIN)
                 {
-                    maxfd = shm[i].UDPfd;
-                }
-            }
-        }
-
-        retval = select(maxfd + 1, &readfds, NULL, NULL, &tv);
-        if (retval == -1)
-        {
-            perror("select");
-            exit(1);
-        }
-        else if (retval)
-        {
-            for (int i = 0; i < N; i++)
-            {
-                if (FD_ISSET(shm[i].UDPfd, &readfds))
-                {   
-                    while (1)
+                    int j;
+                    for (j = 0; j < N; j++)
                     {
-                        memset(buffer, 0, MAXBUFLEN);
-                        n = recvfrom(shm[i].UDPfd, buffer, MAXBUFLEN, 0, (struct sockaddr *)&shm[i].addr, sizeof(shm[i].addr));
-                        if (n < 0)
+                        if (shm[j].UDPfd == events[i].data.fd)
                         {
-                            perror("recvfrom");
-                            exit(1);
-                        }
-                        else if (n == 0)
-                        {
-                            logger(LOGFILE, "Connection closed by peer");
                             break;
                         }
-                        else
+                    }
+
+                    if (j == N)
+                    {
+                        logger(LOGFILE, "Invalid socket");
+                        continue;
+                    }
+
+                    struct sockaddr_in src_addr;
+                    socklen_t addrlen = sizeof(src_addr);
+                    char buf[MAXBUFLEN];
+                    char msg[MAXBUFLEN];
+                    memset(buf, 0, MAXBUFLEN);
+                    memset(msg, 0, MAXBUFLEN);
+
+                    while (1)
+                    {
+                        int numbytes = recvfrom(shm[j].UDPfd, buf, MAXBUFLEN - 1, 0, (struct sockaddr *)&src_addr, &addrlen);
+                        if (numbytes == -1)
                         {
-                            strcat(message, buffer);
-                            if (strstr(message, POSTAMBLE) != NULL)
+                            perror("recvfrom");
+                            break;
+                        }
+                        strcat(msg, buf);
+                        memset(buf, 0, MAXBUFLEN);
+                        if (strstr(msg, POSTAMBLE) != NULL)
+                        {
+                            break;
+                        }
+                    }
+
+                    if (memcmp(msg, MSG, strlen(MSG)) == 0)
+                    {
+                        int k;
+                        for (k = 0; k < 5; k++)
+                        {
+                            if (shm[j].rbuff[k][0] == '\0')
                             {
+                                strcpy(shm[j].rbuff[k], msg);
                                 break;
                             }
                         }
+                        if (k == 10)
+                        {
+                            nospace = 1;
+                            logger(LOGFILE, "Receive buffer full");
+                        }
                     }
-                    
-                    logger(LOGFILE, "Received message: %s", message);
+
+                    else if (memcmp(msg, ACK, strlen(ACK)) == 0)
+                    {
+                        int k;
+                        for (k = 0; k < 5; k++)
+                        {
+                            if (memcmp(shm[j].sbuff[k], msg + strlen(ACK), strlen(msg) - strlen(ACK) - strlen(POSTAMBLE)) == 0)
+                            {
+                                memset(shm[j].sbuff[k], 0, sizeof(shm[j].sbuff[k]));
+                                break;
+                            }
+                        }
+                        if (k == 5)
+                        {
+                            int l;
+                            for (l = 0; l < 5; l++)
+                            {
+                                if (memcmp(shm[j].sbuff[l], msg + strlen(ACK), strlen(msg) - strlen(ACK) - strlen(POSTAMBLE)) == 0)
+                                {
+                                    break;
+                                }
+                            }
+                            if (l == 5)
+                            {
+                                logger(LOGFILE, "Duplicate ACK");
+                            }
+                        }
+                    }
+
+                    else
+                    {
+                        logger(LOGFILE, "Invalid message");
+                    }
+                }
+
+                else
+                {
+                    logger(LOGFILE, "Invalid event");
+                }
+
+                if (err != 0)
+                {
+                    logger(LOGFILE, strerror(err));
                 }
             }
         }
+
         else
         {
-            // check whether a new MTP socket has been created and include it in the read/write set
+            if (nospace == 1)
+            {
+                nospace = 0;
+            }
+
+            for (i = 0; i < N; i++)
+            {
+                if (shm[i].isFree == 0)
+                {
+                    ev.events = EPOLLIN;
+                    ev.data.fd = shm[i].UDPfd;
+                    if (epoll_ctl(epollfd, EPOLL_CTL_ADD, shm[i].UDPfd, &ev) == -1)
+                    {
+                        perror("epoll_ctl");
+                        err = errno;
+                    }
+                }
+            }
+
+            if (err != 0)
+            {
+                logger(LOGFILE, strerror(err));
+            }
         }
     }
 
@@ -271,9 +405,43 @@ Rthread (void *arg)
 void *
 Sthread (void *arg)
 {
+    return NULL;
 }
 
 void *
 Gthread (void *arg)
 {
+    struct SM *shm = (struct SM *)arg;
+    int i;
+
+    while (1)
+    {
+        for (i = 0; i < N; i++)
+        {
+            if (shm[i].isFree == 0)
+            {
+                if (kill(shm[i].pid, 0) == -1)
+                {
+                    if (errno == ESRCH)
+                    {
+                        shm[i].isFree = 1;
+                        shm[i].pid = 0;
+                        close(shm[i].UDPfd);
+                        memset(&shm[i].addr, 0, sizeof(shm[i].addr));
+                        memset(shm[i].sbuff, 0, sizeof(shm[i].sbuff));
+                        memset(shm[i].rbuff, 0, sizeof(shm[i].rbuff));
+                        memset(&shm[i].swnd, 0, sizeof(shm[i].swnd));
+                        memset(&shm[i].rwnd, 0, sizeof(shm[i].rwnd));
+                        shm[i].swnd.size = 10;
+                        shm[i].rwnd.size = 5;
+
+                        logger(LOGFILE, "Socket cleaned");
+                    }
+                }
+            }
+        }
+        sleep(T);
+    }
+
+    return NULL;
 }

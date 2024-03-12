@@ -15,94 +15,81 @@
 #include <sys/wait.h>
 #include <time.h>
 #include <sys/time.h>
-#include <sys/select.h>
-#include <sys/ioctl.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <sys/epoll.h>
-#include <sys/poll.h>
-#include <sys/uio.h>
-#include <sys/utsname.h>
-#include <sys/resource.h>
-#include <sys/ipc.h>
 #include <stdarg.h>
 
-#ifndef MAXBUFLEN
-#define MAXBUFLEN 1024
-#endif
+#ifndef MSOCKETLIB
+#define MSOCKETLIB
 
-#ifndef LOGFILE
-#define LOGFILE "log.txt"
-#endif
+    #define SOCK_MTP SOCK_DGRAM
 
-#ifndef T
-#define T 5
-#endif
+    #define MAXBUFLEN 1024
 
-#ifndef N
-#define N 25
-#endif
+    #define LOGFILE "log.txt"
 
-#ifndef ENOTBOUND
-#define ENOTBOUND 989
-#endif
+    #define T 5
+    #define N 25
 
-#ifndef FORMAT
-#define FORMAT
-#define MSG "MSG"
-#define ACK "ACK"
-#define POSTAMBLE "END"
-#endif
+    #define ENOTBOUND 989
 
-#ifndef KEYS
-#define KEYS
-#define KEY_SM "pipiSM"
-#define KEY_SOCK_INFO "pipiSOCK_INFO"
+    #define MSG "MSG"
+    #define ACK "ACK"
+    #define POSTAMBLE "END"
+
+    #define KEY_SM "pipiSM"
+    #define KEY_SOCK_INFO "pipiSOCK_INFO"
+
 #endif
 
 
 struct window
 {
-    int     size;
-    int     acked[16];
+    int                 size;       // Size of the window
+    int                 acked[16];  // Acknowledged packets
 };
 
 struct SM
 {
-    int                 isFree; // 0: allocated, 1: free
-    pid_t               pid;    // PID of the process that created the socket
-    int                 UDPfd;  // UDP socket file descriptor
-    struct sockaddr_in  addr;   // Address of the other end
-    char sbuff[10][1024];       // Send buffer
-    char rbuff[10][1024];       // Receive buffer
-    struct window *swnd;        // Send window
-    struct window *rwnd;        // Receive window
+    int                 isFree;     // 0: allocated, 1: free
+    pid_t               pid;        // PID of the process that created the socket
+    int                 UDPfd;      // UDP socket file descriptor
+    struct sockaddr_in  addr;       // Address of the other end
+    char sbuff[10][1024];           // Send buffer
+    char rbuff[10][1024];           // Receive buffer
+    struct window swnd;            // Send window
+    struct window rwnd;            // Receive window
 };
 
 struct SOCK_INFO
 {
-    sem_t               sem1;
-    sem_t               sem2;
-    int                 sockfd;
-    struct sockaddr_in  addr;
-    int                 err;
+    sem_t               sem1;       // Semaphore 1
+    sem_t               sem2;       // Semaphore 2
+    int                 sockfd;     // Socket file descriptor
+    struct sockaddr_in  addr;       // Address of this machine
+    int                 err;        // Error code
 };
 
-int
-logger(char *fname, const char *format, ...);
 
 int
-m_socket();
+m_socket(int domain, int type, int protocol);
 
 int
-m_sendto();
+m_bind(int sockfd, const struct sockaddr *srcaddr, socklen_t srcaddrlen, const struct sockaddr *destaddr, socklen_t destaddrlen);
 
 int
-m_recvfrom();
+m_sendto(int sockfd, const void *buf, size_t len, int flags, const struct sockaddr *dest_addr, socklen_t addrlen);
 
 int
-m_close();
+m_recvfrom(int sockfd, void *buf, size_t len, int flags, struct sockaddr *src_addr, socklen_t *addrlen);
+
+int
+m_close(int sockfd);
 
 int
 dropMessage(float p);
+
+int
+logger(char *fname, const char *format, ...);

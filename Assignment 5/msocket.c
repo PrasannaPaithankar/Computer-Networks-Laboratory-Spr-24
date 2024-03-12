@@ -3,7 +3,7 @@
 int
 m_socket (int domain, int type, int protocol)
 {
-    int retval;
+    int retval = 0;
 
     int sizeSM = N * sizeof(struct SM);
     int sizeSOCK_INFO = sizeof(struct SOCK_INFO);
@@ -86,9 +86,9 @@ m_socket (int domain, int type, int protocol)
 }
 
 int
-m_bind (int sockfd, const struct sockaddr *addr, socklen_t addrlen)
+m_bind (int sockfd, const struct sockaddr *srcaddr, socklen_t srcaddrlen, const struct sockaddr *destaddr, socklen_t destaddrlen)
 {
-    int retval;
+    int retval = 0;
 
     int sizeSM = N * sizeof(struct SM);
     int sizeSOCK_INFO = sizeof(struct SOCK_INFO);
@@ -124,7 +124,7 @@ m_bind (int sockfd, const struct sockaddr *addr, socklen_t addrlen)
     memset(shmSOCK_INFO, 0, sizeSOCK_INFO);
 
     shmSOCK_INFO->sockfd = sockfd;
-    shmSOCK_INFO->addr = *(struct sockaddr_in *)addr;
+    shmSOCK_INFO->addr = *(struct sockaddr_in *)srcaddr;
 
     if (sem_post(&shmSOCK_INFO->sem1) == -1)
     {
@@ -136,6 +136,15 @@ m_bind (int sockfd, const struct sockaddr *addr, socklen_t addrlen)
     {
         perror("sem_wait");
         retval = errno;
+    }
+
+    for (int i = 0; i < N; i++)
+    {
+        if (shmSM[i].UDPfd == sockfd)
+        {
+            shmSM[i].addr = *(struct sockaddr_in *)destaddr;
+            break;
+        }
     }
 
     retval = shmSOCK_INFO->err;
@@ -158,10 +167,9 @@ m_bind (int sockfd, const struct sockaddr *addr, socklen_t addrlen)
 int
 m_sendto (int sockfd, const void *buf, size_t len, int flags, const struct sockaddr *dest_addr, socklen_t addrlen)
 {
-    int retval;
+    int retval = 0;
 
     int sizeSM = N * sizeof(struct SM);
-    int sizeSOCK_INFO = sizeof(struct SOCK_INFO);
 
     int shmidSM = shm_open(KEY_SM, O_CREAT | O_RDWR, 0666);
     if (shmidSM == -1)
@@ -227,7 +235,7 @@ m_sendto (int sockfd, const void *buf, size_t len, int flags, const struct socka
 int
 m_recvfrom (int sockfd, void *buf, size_t len, int flags, struct sockaddr *src_addr, socklen_t *addrlen)
 {
-    int retval;
+    int retval = 0;
 
     int sizeSM = N * sizeof(struct SM);
     int sizeSOCK_INFO = sizeof(struct SOCK_INFO);
@@ -289,7 +297,7 @@ m_recvfrom (int sockfd, void *buf, size_t len, int flags, struct sockaddr *src_a
 int
 m_close (int sockfd)
 {
-    int retval;
+    int retval = 0;
 
     int sizeSM = N * sizeof(struct SM);
     int sizeSOCK_INFO = sizeof(struct SOCK_INFO);
@@ -394,11 +402,12 @@ logger (char *fname, const char *format, ...)
         perror("fopen");
         return -1;
     }
+    
 
     // Write log message
     va_list args;
     va_start(args, format);
-    fprintf(log, "%s [%s] ", timestamp);
+    fprintf(log, "%s ", timestamp);
     vfprintf(log, format, args);
     fprintf(log, "\n");
     va_end(args);
