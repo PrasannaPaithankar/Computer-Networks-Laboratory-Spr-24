@@ -1,0 +1,5 @@
+*.o
+*.a
+*initmsocket
+*user1
+*user2
