@@ -42,14 +42,22 @@ int main(int argc, char *argv[])
     int n;
     while ((n = read(fd, buf, MAXBUFLEN)) > 0)
     {
-        retval = m_sendto(M1, buf, n, 0, (struct sockaddr *)&dest_addr, sizeof(dest_addr));
-        if (retval == -1)
+        while (m_sendto(M1, buf, n, 0, (struct sockaddr *)&dest_addr, sizeof(dest_addr)) == -1)
         {
-            perror("m_sendto");
-            return errno;
+            if (errno == ENOBUFS)
+            {
+                continue;
+            }
+            else
+            {
+                perror("m_sendto");
+                return errno;
+            }
         }
-        memset(buf, 0, MAXBUFLEN);
+        memset(buf, 0, MAXBUFLEN);   
     }
+
+    sleep(50);
 
     close(fd);
     m_close(M1);    

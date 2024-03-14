@@ -1,5 +1,6 @@
 #include "msocket.h"
 
+
 int
 m_socket (int domain, int type, int protocol)
 {
@@ -47,7 +48,7 @@ m_socket (int domain, int type, int protocol)
         {
             shmSM[i].isFree = 0;
             shmSM[i].pid = getpid();
-            logger(LOGFILE, "msocket.c 50: Free slot found at index %d", i);
+            logger(LOGFILE, "msocket.c 51: Free slot found at index %d", i);
             break;
         }
     }
@@ -72,6 +73,26 @@ m_socket (int domain, int type, int protocol)
 
     shmSM[i].UDPfd = shmSOCK_INFO->sockfd;
     retval = shmSOCK_INFO->sockfd;
+
+    if (munmap(shmSM, sizeSM) == -1)
+    {
+        perror("munmap");
+        retval = -1;
+    }
+
+    if (munmap(shmSOCK_INFO, sizeSOCK_INFO) == -1)
+    {
+        perror("munmap");
+        retval = -1;
+    }
+
+    close(shmidSM);
+    close(shmidSOCK_INFO);
+
+    if (retval != 0)
+    {
+        logger(LOGFILE, "msocket.c 94: Error creating socket: %s", strerror(errno));
+    }
 
     return retval;
 }
@@ -135,9 +156,30 @@ m_bind (int sockfd, const struct sockaddr *srcaddr, socklen_t srcaddrlen, const 
         if (shmSM[i].UDPfd == sockfd)
         {
             struct sockaddr_in *daddr = (struct sockaddr_in *)malloc(sizeof(struct sockaddr_in));
+            *daddr = *(struct sockaddr_in *)destaddr;
             shmSM[i].addr = *daddr;
             break;
         }
+    }
+
+    if (munmap(shmSM, sizeSM) == -1)
+    {
+        perror("munmap");
+        retval = -1;
+    }
+
+    if (munmap(shmSOCK_INFO, sizeSOCK_INFO) == -1)
+    {
+        perror("munmap");
+        retval = -1;
+    }
+
+    close(shmidSM);
+    close(shmidSOCK_INFO);
+
+    if (retval != 0)
+    {
+        logger(LOGFILE, "msocket.c 94: Error binding socket: %s", strerror(errno));
     }
 
     return retval;
@@ -150,23 +192,23 @@ m_sendto (int sockfd, const void *buf, size_t len, int flags, const struct socka
 
     int sizeSM = N * sizeof(struct SM);
 
+    // msg format: MSG<seq><msg>POSTAMBLE
+
     char msg[1024];
     memset(msg, 0, 1024);
-    // msg format: MSG<seq><msg>POSTAMBLE
-    strcpy(msg, MSG);
 
     int shmidSM = shm_open(KEY_SM, O_CREAT | O_RDWR, 0666);
     if (shmidSM == -1)
     {
         perror("shm_open");
-        retval = errno;
+        retval = -1;
     }
 
     struct SM *shmSM = mmap(0, sizeSM, PROT_READ | PROT_WRITE, MAP_SHARED, shmidSM, 0);
     if (shmSM == MAP_FAILED)
     {
         perror("mmap");
-        retval = errno;
+        retval = -1;
     }
 
     int i;
@@ -179,22 +221,31 @@ m_sendto (int sockfd, const void *buf, size_t len, int flags, const struct socka
 
             if (memcmp(dest_addr, shmSMaddr, addrlen) == 0)
             {
-                int j;
-                for (j = (shmSM[i].swnd.base + shmSM[i].swnd.size) % 10; j != shmSM[i].swnd.base; j = (j + 1) % 10)
+                if (shmSM[i].sbuff[shmSM[i].lastPut][0] == '\0')
                 {
-                    if (shmSM[i].sbuff[j][0] == '\0')
+                    char seq[SEQ_LEN + 1];
+                    if (shmSM[i].currSeq < 10)
                     {
-                        char seq[SEQ_LEN];
-                        sprintf(seq, "%d", shmSM[i].currSeq);
-                        strcat(msg, seq);
-                        memcpy(msg + strlen(MSG) + SEQ_LEN, buf, len);
-                        strcat(msg, POSTAMBLE);
-                        strcpy(shmSM[i].sbuff[j], msg);
-                        shmSM[i].currSeq = (shmSM[i].currSeq + 1) % 16;
-                        break;
+                        sprintf(seq, "0%d", shmSM[i].currSeq);
                     }
+                    else
+                    {
+                        sprintf(seq, "%d", shmSM[i].currSeq);
+                    }
+                    strcat(msg, MSG);
+                    strcat(msg, seq);
+                    memcpy(msg + strlen(MSG) + SEQ_LEN, (char *)buf, len);
+                    strcat(msg, POSTAMBLE);
+                    strcpy(shmSM[i].sbuff[shmSM[i].lastPut], msg);
+                    
+                    logger(LOGFILE, "msocket.c 238: Putting message %s in send buffer at index %d", shmSM[i].sbuff[shmSM[i].lastPut], shmSM[i].lastPut);
+                    
+                    shmSM[i].currSeq = (shmSM[i].currSeq + 1) % 16;
+                    shmSM[i].lastPut = (shmSM[i].lastPut + 1) % 10;
+
+                    break;
                 }
-                if (j == shmSM[i].swnd.base)
+                else
                 {
                     retval = -1;
                     errno = ENOBUFS;
@@ -215,6 +266,19 @@ m_sendto (int sockfd, const void *buf, size_t len, int flags, const struct socka
         errno = ENOTCONN;
     }
 
+    if (munmap(shmSM, sizeSM) == -1)
+    {
+        perror("munmap");
+        retval = -1;
+    }
+
+    close(shmidSM);
+
+    if (retval != 0)
+    {
+        logger(LOGFILE, "msocket.c 279: Error sending message: %s", strerror(errno));
+    }
+
     return retval;
 }
 
@@ -225,7 +289,6 @@ m_recvfrom (int sockfd, void *buf, size_t len, int flags, struct sockaddr *src_a
     int retval = 0;
 
     int sizeSM = N * sizeof(struct SM);
-    int sizeSOCK_INFO = sizeof(struct SOCK_INFO);
 
     int shmidSM = shm_open(KEY_SM, O_CREAT | O_RDWR, 0666);
     if (shmidSM == -1)
@@ -253,13 +316,15 @@ m_recvfrom (int sockfd, void *buf, size_t len, int flags, struct sockaddr *src_a
                 {
                     retval = strlen(shmSM[i].rbuff[j]) - strlen(MSG) - SEQ_LEN - strlen(POSTAMBLE);
                     memcpy(buf, shmSM[i].rbuff[j] + strlen(MSG) + SEQ_LEN, retval);
+
+                    logger(LOGFILE, "msocket.c 314: Received message %s from receive buffer at index %d", shmSM[i].rbuff[j], j);
                     break;
                 }
             }
             if (j == shmSM[i].rwnd.base)
             {
                 retval = -1;
-                errno = ENOBUFS;
+                errno = ENOMSG;
             }
 
             break;
@@ -270,6 +335,19 @@ m_recvfrom (int sockfd, void *buf, size_t len, int flags, struct sockaddr *src_a
     {
         retval = -1;
         errno = ENOTCONN;
+    }
+
+    if (munmap(shmSM, sizeSM) == -1)
+    {
+        perror("munmap");
+        retval = -1;
+    }
+
+    close(shmidSM);
+
+    if (retval != 0)
+    {
+        logger(LOGFILE, "msocket.c 350: Error receiving message: %s", strerror(errno));
     }
 
     return retval;
@@ -336,16 +414,37 @@ m_close (int sockfd)
     if (sem_post(&shmSOCK_INFO->sem1) == -1)
     {
         perror("sem_post");
-        retval = errno;
+        retval = -1;
     }
 
     if (sem_wait(&shmSOCK_INFO->sem2) == -1)
     {
         perror("sem_wait");
-        retval = errno;
+        retval = -1;
     }
 
     retval = shmSOCK_INFO->err;
+
+    if (munmap(shmSM, sizeSM) == -1)
+    {
+        perror("munmap");
+        retval = -1;
+    }
+
+    if (munmap(shmSOCK_INFO, sizeSOCK_INFO) == -1)
+    {
+        perror("munmap");
+        retval = -1;
+    }
+
+    close(shmidSM);
+    close(shmidSOCK_INFO);
+
+    if (retval != 0)
+    {
+        logger(LOGFILE, "msocket.c 94: Error closing socket: %s", strerror(errno));
+    }
+
     return retval;
 }
 
@@ -360,7 +459,7 @@ dropMessage(float p)
 int
 logger (char *fname, const char *format, ...)
 {
-     // Get current time
+    // Get current time
     time_t now = time(NULL);
     char timestamp[40];
     strftime(timestamp, sizeof(timestamp), "%Y-%m-%d %H:%M:%S", localtime(&now));

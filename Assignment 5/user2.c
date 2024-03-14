@@ -38,10 +38,33 @@ int main(int argc, char *argv[])
         return errno;
     }
 
+    printf("File opened\n");
+
     char buf[MAXBUFLEN];
     int n;
-    while ((n = m_recvfrom(M2, buf, MAXBUFLEN, 0, (struct sockaddr *)&dest_addr, (socklen_t *)&dest_addr)) > 0)
+    while (1)
     {
+        n = -1;
+        while (n == -1)
+        {
+            sleep(2);
+            // printf("Waiting for data...\n");
+            n = m_recvfrom(M2, buf, MAXBUFLEN, 0, (struct sockaddr *)&dest_addr, sizeof(dest_addr));
+            if (errno == ENOMSG)
+            {
+                continue;
+            }
+            else
+            {
+                perror("m_recvfrom");
+                return errno;
+            }
+        } 
+        if (n == 0)
+        {
+            break;
+        }
+        
         retval = write(fd, buf, n);
         if (retval == -1)
         {

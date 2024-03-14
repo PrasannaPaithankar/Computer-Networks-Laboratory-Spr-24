@@ -48,6 +48,9 @@ int main(int argc, char *argv[])
         shmSM[i].swnd.base = 0;
         shmSM[i].rwnd.base = 0;
         shmSM[i].currSeq = 0;
+        shmSM[i].currExpSeq = 0;
+        shmSM[i].lastAck = 0;
+        shmSM[i].lastPut = 0;
     }
 
     int shmidSOCK_INFO = shm_open(KEY_SOCK_INFO, O_CREAT | O_RDWR, 0666);
@@ -114,8 +117,6 @@ int main(int argc, char *argv[])
 
         char srcIP[INET_ADDRSTRLEN];
         inet_ntop(AF_INET, &(shmSOCK_INFO->addr.sin_addr), srcIP, INET_ADDRSTRLEN);
-
-        printf("sockfd: %d; addr.sin_port: %d; addr.sin_addr.s_addr: %s; err: %d\n", shmSOCK_INFO->sockfd, ntohs(shmSOCK_INFO->addr.sin_port), srcIP, shmSOCK_INFO->err);
 
         if (shmSOCK_INFO->sockfd == 0 && shmSOCK_INFO->addr.sin_port == 0 && shmSOCK_INFO->err == 0)
         {
@@ -325,6 +326,8 @@ Rthread(void *arg)
                     // Handle the MSG messages
                     if (memcmp(msg, MSG, strlen(MSG)) == 0)
                     {
+                        logger(LOGFILE, "Message %s received from %s:%d", msg, inet_ntoa(src_addr.sin_addr), ntohs(src_addr.sin_port));
+                        
                         char data[MAXBUFLEN];
                         char seqno[SEQ_LEN + 1];
                         memset(data, 0, sizeof(data));
@@ -384,7 +387,14 @@ Rthread(void *arg)
                         memset(ack, 0, sizeof(ack));
                         strcpy(ack, ACK);
                         char sseqno[SEQ_LEN + 1];
-                        sprintf(sseqno, "%d", shm[j].lastAck);
+                        if (shm[j].lastAck < 10)
+                        {
+                            sprintf(sseqno, "0%d", shm[j].lastAck);
+                        }
+                        else
+                        {
+                            sprintf(sseqno, "%d", shm[j].lastAck);
+                        }
                         strcat(ack, sseqno);
                         char ssize[SEQ_LEN + 1];
                         sprintf(ssize, "%d", shm[j].rwnd.size);
@@ -401,6 +411,7 @@ Rthread(void *arg)
                     // Handle the ACK messages
                     else if (memcmp(msg, ACK, strlen(ACK)) == 0)
                     {
+                        logger(LOGFILE, "ACK %s received from %s:%d", msg, inet_ntoa(src_addr.sin_addr), ntohs(src_addr.sin_port));
                         char data[MAXBUFLEN];
                         char seqno[SEQ_LEN + 1];
                         memset(data, 0, sizeof(data));
@@ -471,7 +482,14 @@ Rthread(void *arg)
                         memset(ack, 0, sizeof(ack));
                         strcpy(ack, ACK);
                         char sseqno[SEQ_LEN + 1];
-                        sprintf(sseqno, "%d", shm[i].lastAck);
+                        if (shm[i].lastAck < 10)
+                        {
+                            sprintf(sseqno, "0%d", shm[i].lastAck);
+                        }
+                        else
+                        {
+                            sprintf(sseqno, "%d", shm[i].lastAck);
+                        }
                         strcat(ack, sseqno);
                         char ssize[SEQ_LEN + 1];
                         sprintf(ssize, "%d", shm[i].rwnd.size);
@@ -538,6 +556,7 @@ Sthread(void *arg)
                             }
                         }
                         timedout = 1;
+                        logger(LOGFILE, "Timeout: Resending all messages in the send window");
                         break;
                     }
                 }
@@ -545,7 +564,7 @@ Sthread(void *arg)
                 {
                     for (int j = shm[i].swnd.base; j < (shm[i].swnd.base + shm[i].swnd.size) % 10; j = (j + 1) % 10)
                     {
-                        if (shm[i].swnd.timestamp[j] == 0)
+                        if (shm[i].swnd.timestamp[j] == 0 && shm[i].sbuff[j][0] != '\0')
                         {
                             shm[i].swnd.timestamp[j] = time(NULL);
 
@@ -553,6 +572,7 @@ Sthread(void *arg)
                             {
                                 perror("sendto");
                             }
+                            logger(LOGFILE, "Message sent with sequence number: %d", shm[i].currSeq);
                         }
                     }
                 }

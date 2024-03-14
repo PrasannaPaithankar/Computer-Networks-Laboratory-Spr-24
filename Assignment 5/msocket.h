@@ -64,6 +64,7 @@ struct SM
     struct window       rwnd;               // Receive window
     int                 currExpSeq;         // Current expected sequence number
     int                 lastAck;            // Last acknowledged sequence number
+    int                 lastPut             // Last index where a message was put in the send buffer
 };
 
 struct SOCK_INFO
