@@ -1,3 +1,14 @@
+/*
+ *  Author:     Prasanna Paithankar
+ *  Roll No.:   21CS30065
+ *  Course:     Computer Networks Laboratory (CS39006) Spr 2023-24
+ *  Date:       15/03/2024
+
+ *  File:       initmsocket.c
+ *  Compile:    gcc -o initmsocket initmsocket.c -L. -lmsocket -lpthread -lrt
+ *  Run:        ./initmsocket
+ */
+
 #include "msocket.h"
 
 void *Rthread(void *arg);
@@ -52,6 +63,8 @@ int main(int argc, char *argv[])
         shmSM[i].lastAck = 0;
         shmSM[i].lastPut = 0;
     }
+    printf("SM initialized\n");
+    logger(LOGFILE, "initsocket.c 67: SM initialized");
 
     int shmidSOCK_INFO = shm_open(KEY_SOCK_INFO, O_CREAT | O_RDWR, 0666);
     if (shmidSOCK_INFO == -1)
@@ -85,27 +98,32 @@ int main(int argc, char *argv[])
         perror("sem_init");
         exit(1);
     }
+    printf("SOCK_INFO initialized\n");
+    logger(LOGFILE, "initsocket.c 102: SOCK_INFO initialized");
 
     if (pthread_create(&R, NULL, Rthread, (void *)shmSM) != 0)
     {
         perror("pthread_create");
         exit(1);
     }
-    logger(LOGFILE, "initsocket.c 90: Rthread created");
+    printf("Rthread created\n");
+    logger(LOGFILE, "initsocket.c 110: Rthread created");
 
     if (pthread_create(&S, NULL, Sthread, (void *)shmSM) != 0)
     {
         perror("pthread_create");
         exit(1);
     }
-    logger(LOGFILE, "initsocket.c 97: Sthread created");
+    printf("Sthread created\n");
+    logger(LOGFILE, "initsocket.c 118: Sthread created");
 
     if (pthread_create(&G, NULL, Gthread, (void *)shmSM) != 0)
     {
         perror("pthread_create");
         exit(1);
     }
-    logger(LOGFILE, "initsocket.c 104: Gthread created");
+    printf("Gthread created\n");
+    logger(LOGFILE, "initsocket.c 126: Gthread created");
 
     while (1)
     {

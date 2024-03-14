@@ -1,3 +1,13 @@
+/*
+ *  Author:     Prasanna Paithankar
+ *  Roll No.:   21CS30065
+ *  Course:     Computer Networks Laboratory (CS39006) Spr 2023-24
+ *  Date:       15/03/2024
+
+ *  File:       msocket.h
+ *  Purpose:    Header file for the msocket library
+ */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

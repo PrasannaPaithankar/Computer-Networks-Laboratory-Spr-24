@@ -1,3 +1,13 @@
+/*
+ *  Author:     Prasanna Paithankar
+ *  Roll No.:   21CS30065
+ *  Course:     Computer Networks Laboratory (CS39006) Spr 2023-24
+ *  Date:       15/03/2024
+
+ *  File:       msocket.c
+ *  Purpose:    Implementation of the msocket library
+ */
+
 #include "msocket.h"
 
 
@@ -97,6 +107,7 @@ m_socket (int domain, int type, int protocol)
     return retval;
 }
 
+
 int
 m_bind (int sockfd, const struct sockaddr *srcaddr, socklen_t srcaddrlen, const struct sockaddr *destaddr, socklen_t destaddrlen)
 {
@@ -184,6 +195,7 @@ m_bind (int sockfd, const struct sockaddr *srcaddr, socklen_t srcaddrlen, const 
 
     return retval;
 }
+
 
 int
 m_sendto (int sockfd, const void *buf, size_t len, int flags, const struct sockaddr *dest_addr, socklen_t addrlen)

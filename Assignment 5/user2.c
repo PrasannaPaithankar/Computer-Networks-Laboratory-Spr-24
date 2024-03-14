@@ -1,3 +1,14 @@
+/*
+ *  Author:     Prasanna Paithankar
+ *  Roll No.:   21CS30065
+ *  Course:     Computer Networks Laboratory (CS39006) Spr 2023-24
+ *  Date:       15/03/2024
+
+ *  File:       user1.c
+ *  Compile:    gcc -o user2 user2.c -L. -lmsocket
+ *  Run:        ./user2 <src_port> <dest_port> <dest_ip>
+ */
+
 #include "msocket.h"
 
 int main(int argc, char *argv[])
