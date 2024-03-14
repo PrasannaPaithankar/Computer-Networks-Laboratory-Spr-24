@@ -20,7 +20,7 @@ int main(int argc, char *argv[])
 
     dest_addr.sin_family = AF_INET;
     dest_addr.sin_port = htons(atoi(argv[2]));
-    dest_addr.sin_addr.s_addr = inet_addr(argv[3]);
+    inet_pton(AF_INET, argv[3], &dest_addr.sin_addr);
 
     retval = m_bind(M2, (struct sockaddr *)&src_addr, sizeof(src_addr), (struct sockaddr *)&dest_addr, sizeof(dest_addr));
     if (retval == -1)

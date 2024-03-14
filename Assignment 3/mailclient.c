@@ -114,7 +114,7 @@ int main(int argc, char *argv[])
 
             // Bind socket to port
             servaddr.sin_family = AF_INET;
-            servaddr.sin_addr.s_addr = INADDR_ANY;
+            inet_pton(AF_INET, argv[1], &servaddr.sin_addr);
             if (argc > 2)
                 servaddr.sin_port = htons(atoi(argv[3]));
             else

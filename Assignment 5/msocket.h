@@ -33,10 +33,9 @@
     #define T 5
     #define N 25
 
-    #define ENOTBOUND 989
-
     #define MSG "MSG"
     #define ACK "ACK"
+    #define SEQ_LEN 2
     #define POSTAMBLE "END"
 
     #define KEY_SM "pipiSM"
@@ -47,20 +46,24 @@
 
 struct window
 {
-    int                 size;       // Size of the window
-    int                 acked[16];  // Acknowledged packets
+    int                 size;                       // for swnd: max number of messages that can be sent w/o ack; for rwnd: max number of messages that can be received
+    int                 base;                       // for swnd: sequence number of the first message in the window; for rwnd: sequence number of the first message expected to be received
+    time_t              timestamp[10];              // for swnd: contains the time at which the message was sent; for rwnd: contains the time at which the message was received
 };
 
 struct SM
 {
-    int                 isFree;     // 0: allocated, 1: free
-    pid_t               pid;        // PID of the process that created the socket
-    int                 UDPfd;      // UDP socket file descriptor
-    struct sockaddr_in  addr;       // Address of the other end
-    char sbuff[10][1024];           // Send buffer
-    char rbuff[10][1024];           // Receive buffer
-    struct window swnd;            // Send window
-    struct window rwnd;            // Receive window
+    int                 isFree;             // 0: allocated, 1: free
+    pid_t               pid;                // PID of the process that created the socket
+    int                 UDPfd;              // UDP socket file descriptor
+    struct sockaddr_in  addr;               // Address of the other end
+    char                sbuff[10][1024];    // Send buffer
+    char                rbuff[10][1024];    // Receive buffer
+    struct window       swnd;               // Send window
+    int                 currSeq;            // Current sequence number
+    struct window       rwnd;               // Receive window
+    int                 currExpSeq;         // Current expected sequence number
+    int                 lastAck;            // Last acknowledged sequence number
 };
 
 struct SOCK_INFO

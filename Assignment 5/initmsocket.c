@@ -1,14 +1,12 @@
 #include "msocket.h"
 
-void *Rthread (void *arg);
+void *Rthread(void *arg);
 
-void *Sthread (void *arg);
+void *Sthread(void *arg);
 
-void *Gthread (void *arg);
+void *Gthread(void *arg);
 
-
-int
-main (int argc, char *argv[])
+int main(int argc, char *argv[])
 {
     pthread_t R, S, G;
 
@@ -45,8 +43,11 @@ main (int argc, char *argv[])
         memset(shmSM[i].rbuff, 0, sizeof(shmSM[i].rbuff));
         memset(&shmSM[i].swnd, 0, sizeof(shmSM[i].swnd));
         memset(&shmSM[i].rwnd, 0, sizeof(shmSM[i].rwnd));
-        shmSM[i].swnd.size = 10;
+        shmSM[i].swnd.size = 5;
         shmSM[i].rwnd.size = 5;
+        shmSM[i].swnd.base = 0;
+        shmSM[i].rwnd.base = 0;
+        shmSM[i].currSeq = 0;
     }
 
     int shmidSOCK_INFO = shm_open(KEY_SOCK_INFO, O_CREAT | O_RDWR, 0666);
@@ -87,21 +88,21 @@ main (int argc, char *argv[])
         perror("pthread_create");
         exit(1);
     }
-    logger(LOGFILE, "Rthread created");
+    logger(LOGFILE, "initsocket.c 90: Rthread created");
 
     if (pthread_create(&S, NULL, Sthread, (void *)shmSM) != 0)
     {
         perror("pthread_create");
         exit(1);
     }
-    logger(LOGFILE, "Sthread created");
+    logger(LOGFILE, "initsocket.c 97: Sthread created");
 
     if (pthread_create(&G, NULL, Gthread, (void *)shmSM) != 0)
     {
         perror("pthread_create");
         exit(1);
     }
-    logger(LOGFILE, "Gthread created");
+    logger(LOGFILE, "initsocket.c 104: Gthread created");
 
     while (1)
     {
@@ -111,9 +112,14 @@ main (int argc, char *argv[])
             continue;
         }
 
+        char srcIP[INET_ADDRSTRLEN];
+        inet_ntop(AF_INET, &(shmSOCK_INFO->addr.sin_addr), srcIP, INET_ADDRSTRLEN);
+
+        printf("sockfd: %d; addr.sin_port: %d; addr.sin_addr.s_addr: %s; err: %d\n", shmSOCK_INFO->sockfd, ntohs(shmSOCK_INFO->addr.sin_port), srcIP, shmSOCK_INFO->err);
+
         if (shmSOCK_INFO->sockfd == 0 && shmSOCK_INFO->addr.sin_port == 0 && shmSOCK_INFO->err == 0)
         {
-            logger(LOGFILE, "Creating socket");
+            logger(LOGFILE, "initsocket.c 116: Creating socket");
             shmSOCK_INFO->sockfd = socket(AF_INET, SOCK_DGRAM, 0);
             if (shmSOCK_INFO->sockfd == -1)
             {
@@ -126,10 +132,10 @@ main (int argc, char *argv[])
             }
         }
 
-        else if (shmSOCK_INFO->sockfd != 0 && shmSOCK_INFO->addr.sin_port != 0 && shmSOCK_INFO->addr.sin_addr.s_addr != 0)
+        else if (shmSOCK_INFO->sockfd != 0 && shmSOCK_INFO->addr.sin_port != 0)
         {
-            logger(LOGFILE, "Binding socket");
-            if (bind(shmSOCK_INFO->sockfd, (struct sockaddr *)&shmSOCK_INFO->addr, sizeof(shmSOCK_INFO->addr)) == -1)
+            logger(LOGFILE, "initsocket.c 131: Binding socket");
+            if (bind(shmSOCK_INFO->sockfd, (struct sockaddr *)&(shmSOCK_INFO->addr), sizeof(shmSOCK_INFO->addr)) == -1)
             {
                 perror("bind");
                 shmSOCK_INFO->err = errno;
@@ -142,7 +148,7 @@ main (int argc, char *argv[])
 
         else if (shmSOCK_INFO->sockfd != 0 && shmSOCK_INFO->addr.sin_port == 0 && shmSOCK_INFO->addr.sin_addr.s_addr == 0)
         {
-            logger(LOGFILE, "Closing socket");
+            logger(LOGFILE, "initsocket.c 145: Closing socket");
             if (close(shmSOCK_INFO->sockfd) == -1)
             {
                 perror("close");
@@ -156,7 +162,7 @@ main (int argc, char *argv[])
 
         else
         {
-            logger(LOGFILE, "Invalid request");
+            logger(LOGFILE, "initsocket.c 159: Invalid request");
             shmSOCK_INFO->err = EINVAL;
         }
 
@@ -233,10 +239,10 @@ main (int argc, char *argv[])
 }
 
 void *
-Rthread (void *arg)
+Rthread(void *arg)
 {
     int err = 0;
-    int nospace = 0;
+    int nospace[N] = {0};
     struct SM *shm = (struct SM *)arg;
 
     struct epoll_event ev, events[25];
@@ -265,7 +271,7 @@ Rthread (void *arg)
 
     while (1)
     {
-        nfds = epoll_wait(epollfd, events, 25, T*1000);
+        nfds = epoll_wait(epollfd, events, 25, T * 1000);
         if (nfds == -1)
         {
             perror("epoll_wait");
@@ -316,55 +322,127 @@ Rthread (void *arg)
                         }
                     }
 
+                    // Handle the MSG messages
                     if (memcmp(msg, MSG, strlen(MSG)) == 0)
                     {
+                        char data[MAXBUFLEN];
+                        char seqno[SEQ_LEN + 1];
+                        memset(data, 0, sizeof(data));
+                        memset(seqno, 0, sizeof(seqno));
+                        memcpy(data, msg + strlen(MSG) + SEQ_LEN, strlen(msg) - strlen(MSG) - strlen(POSTAMBLE) - SEQ_LEN);
+                        memcpy(seqno, msg + strlen(MSG), SEQ_LEN);
+
                         int k;
-                        for (k = 0; k < 5; k++)
+                        int pos = 0;
+
+                        if (shm[j].rwnd.size == 0)
                         {
-                            if (shm[j].rbuff[k][0] == '\0')
+                            nospace[j] = 1;
+                        }
+
+                        for (k = shm[j].currExpSeq; k < (shm[j].currExpSeq + shm[j].rwnd.size) % 16; k = (k + 1) % 16)
+                        {
+                            if (k == atoi(seqno))
                             {
-                                strcpy(shm[j].rbuff[k], msg);
                                 break;
                             }
+                            pos++;
                         }
-                        if (k == 10)
-                        {
-                            nospace = 1;
-                            logger(LOGFILE, "Receive buffer full");
-                        }
-                    }
 
+                        if (k == (shm[j].currExpSeq + shm[j].rwnd.size) % 16)
+                        {
+                            logger(LOGFILE, "Duplicate message");
+                        }
+                        else
+                        {
+                            memcpy(shm[j].rbuff[shm[j].rwnd.base + pos], data, strlen(data));
+                            int lastposack = 0;
+                            if (pos == 0)
+                            {
+                                for (int l = shm[j].rwnd.base; l < (shm[j].rwnd.base + 5) % 5; l = (l + 1) % 5)
+                                {
+                                    if (shm[j].rbuff[l][0] != '\0')
+                                    {
+                                        shm[j].lastAck = (shm[j].lastAck + 1) % 16;
+                                        lastposack++;
+                                    }
+                                    else
+                                    {
+                                        break;
+                                    }
+                                }
+                                shm[j].rwnd.base = (shm[j].rwnd.base + lastposack) % 5;
+                                shm[j].rwnd.size = 5 - lastposack;
+
+                            }
+                            else
+                            {
+                                logger(LOGFILE, "Message received out of order");
+                            }
+                        }
+                        char ack[MAXBUFLEN];
+                        memset(ack, 0, sizeof(ack));
+                        strcpy(ack, ACK);
+                        char sseqno[SEQ_LEN + 1];
+                        sprintf(sseqno, "%d", shm[j].lastAck);
+                        strcat(ack, sseqno);
+                        char ssize[SEQ_LEN + 1];
+                        sprintf(ssize, "%d", shm[j].rwnd.size);
+                        strcat(ack, ssize);
+                        strcat(ack, POSTAMBLE);
+                        if (sendto(shm[j].UDPfd, ack, strlen(ack), 0, (struct sockaddr *)&src_addr, addrlen) == -1)
+                        {
+                            perror("sendto");
+                        }
+
+                        logger(LOGFILE, "ACK sent for sequence number: %d", shm[j].lastAck);
+                    }
+                    
+                    // Handle the ACK messages
                     else if (memcmp(msg, ACK, strlen(ACK)) == 0)
                     {
+                        char data[MAXBUFLEN];
+                        char seqno[SEQ_LEN + 1];
+                        memset(data, 0, sizeof(data));
+                        memset(seqno, 0, sizeof(seqno));
+                        memcpy(data, msg + strlen(ACK) + SEQ_LEN, strlen(msg) - strlen(ACK) - strlen(POSTAMBLE) - SEQ_LEN);
+                        memcpy(seqno, msg + strlen(ACK), SEQ_LEN);
+
                         int k;
-                        for (k = 0; k < 5; k++)
+                        for (k = shm[i].swnd.base; k < (shm[i].swnd.base + shm[i].swnd.size) % 10; k = (k + 1) % 10)
                         {
-                            if (memcmp(shm[j].sbuff[k], msg + strlen(ACK), strlen(msg) - strlen(ACK) - strlen(POSTAMBLE)) == 0)
+                            char sseqno[SEQ_LEN + 1];
+                            memset(sseqno, 0, sizeof(sseqno));
+                            memcpy(sseqno, shm[i].sbuff[k] + strlen(MSG), SEQ_LEN);
+                            if (memcmp(sseqno, seqno, SEQ_LEN) == 0)
                             {
-                                memset(shm[j].sbuff[k], 0, sizeof(shm[j].sbuff[k]));
                                 break;
                             }
                         }
-                        if (k == 5)
+
+                        if (k == (shm[i].swnd.base + shm[i].swnd.size) % 10)
                         {
-                            int l;
-                            for (l = 0; l < 5; l++)
-                            {
-                                if (memcmp(shm[j].sbuff[l], msg + strlen(ACK), strlen(msg) - strlen(ACK) - strlen(POSTAMBLE)) == 0)
-                                {
-                                    break;
-                                }
-                            }
-                            if (l == 5)
-                            {
-                                logger(LOGFILE, "Duplicate ACK");
-                            }
+                            logger(LOGFILE, "Duplicate ACK");
                         }
+                        else
+                        {
+                            for (int l = shm[i].swnd.base; l <= k; l = (l + 1) % 10)
+                            {
+                                memset(shm[i].sbuff[l], 0, sizeof(shm[i].sbuff[l]));
+                            }
+                            shm[i].swnd.base = (k + 1) % 10;
+                        }
+                        shm[i].swnd.size = atoi(data);
                     }
 
                     else
                     {
-                        logger(LOGFILE, "Invalid message");
+                        logger(LOGFILE, "Invalid message type");
+                    }
+
+                    if (err != 0)
+                    {
+                        logger(LOGFILE, strerror(err));
                     }
                 }
 
@@ -382,9 +460,32 @@ Rthread (void *arg)
 
         else
         {
-            if (nospace == 1)
+            for (i = 0; i < N; i++)
             {
-                nospace = 0;
+                if (nospace[i] == 1)
+                {
+                    logger(LOGFILE, "Receive window full");
+                    if (shm[i].rwnd.size != 0)
+                    {
+                        char ack[MAXBUFLEN];
+                        memset(ack, 0, sizeof(ack));
+                        strcpy(ack, ACK);
+                        char sseqno[SEQ_LEN + 1];
+                        sprintf(sseqno, "%d", shm[i].lastAck);
+                        strcat(ack, sseqno);
+                        char ssize[SEQ_LEN + 1];
+                        sprintf(ssize, "%d", shm[i].rwnd.size);
+                        strcat(ack, ssize);
+                        strcat(ack, POSTAMBLE);
+                        if (sendto(shm[i].UDPfd, ack, strlen(ack), 0, (struct sockaddr *)&(shm[i].addr), sizeof(shm[i].addr)) == -1)
+                        {
+                            perror("sendto");
+                        }
+                        logger(LOGFILE, "ACK sent for sequence number: %d", shm[i].lastAck);
+
+                        nospace[i] = 0;
+                    }
+                }
             }
 
             for (i = 0; i < N; i++)
@@ -412,13 +513,60 @@ Rthread (void *arg)
 }
 
 void *
-Sthread (void *arg)
+Sthread(void *arg)
 {
+    struct SM *shm = (struct SM *)arg;
+    int i;
+
+    while (1)
+    {
+        for (i = 0; i < N; i++)
+        {
+            if (shm[i].isFree == 0)
+            {
+                int timedout = 0;
+                for (int j = shm[i].swnd.base; j < (shm[i].swnd.base + shm[i].swnd.size) % 10; j = (j + 1) % 10)
+                {
+                    if (shm[i].swnd.timestamp[j] != 0 && (time(NULL) - shm[i].swnd.timestamp[j]) > T)
+                    {
+                        for (int k = shm[i].swnd.base; k < (shm[i].swnd.base + shm[i].swnd.size) % 10; k++)
+                        {
+                            shm[i].swnd.timestamp[k] = time(NULL);
+                            if (sendto(shm[i].UDPfd, shm[i].sbuff[k], strlen(shm[i].sbuff[k]), 0, (struct sockaddr *)&(shm[i].addr), sizeof(shm[i].addr)) == -1)
+                            {
+                                perror("sendto");
+                            }
+                        }
+                        timedout = 1;
+                        break;
+                    }
+                }
+                if (timedout == 0)
+                {
+                    for (int j = shm[i].swnd.base; j < (shm[i].swnd.base + shm[i].swnd.size) % 10; j = (j + 1) % 10)
+                    {
+                        if (shm[i].swnd.timestamp[j] == 0)
+                        {
+                            shm[i].swnd.timestamp[j] = time(NULL);
+
+                            if (sendto(shm[i].UDPfd, shm[i].sbuff[j], strlen(shm[i].sbuff[j]), 0, (struct sockaddr *)&(shm[i].addr), sizeof(shm[i].addr)) == -1)
+                            {
+                                perror("sendto");
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        sleep(T / 4);
+    }
+
     return NULL;
 }
 
 void *
-Gthread (void *arg)
+Gthread(void *arg)
 {
     struct SM *shm = (struct SM *)arg;
     int i;
@@ -441,8 +589,11 @@ Gthread (void *arg)
                         memset(shm[i].rbuff, 0, sizeof(shm[i].rbuff));
                         memset(&shm[i].swnd, 0, sizeof(shm[i].swnd));
                         memset(&shm[i].rwnd, 0, sizeof(shm[i].rwnd));
-                        shm[i].swnd.size = 10;
+                        shm[i].swnd.size = 5;
                         shm[i].rwnd.size = 5;
+                        shm[i].swnd.base = 0;
+                        shm[i].rwnd.base = 0;
+                        shm[i].currSeq = 0;
 
                         logger(LOGFILE, "Socket cleaned");
                     }
