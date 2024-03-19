@@ -58,7 +58,7 @@ m_socket (int domain, int type, int protocol)
         {
             shmSM[i].isFree = 0;
             shmSM[i].pid = getpid();
-            logger(LOGFILE, "Free slot found at index %d", i);
+            logger(LOGFILE, "%s:%d\tFree slot found at index %d", __FILE__, __LINE__, i);
             break;
         }
     }
@@ -101,7 +101,7 @@ m_socket (int domain, int type, int protocol)
 
     if (retval != 0)
     {
-        logger(LOGFILE, "Error creating socket: %s", strerror(errno));
+        logger(LOGFILE, "%s:%d\tError creating socket: %s", __FILE__, __LINE__, strerror(errno));
     }
 
     return retval;
@@ -190,7 +190,7 @@ m_bind (int sockfd, const struct sockaddr *srcaddr, socklen_t srcaddrlen, const 
 
     if (retval != 0)
     {
-        logger(LOGFILE, "Error binding socket: %s", strerror(errno));
+        logger(LOGFILE, "%s:%d\tError binding socket: %s", __FILE__, __LINE__, strerror(errno));
     }
 
     return retval;
@@ -250,7 +250,7 @@ m_sendto (int sockfd, const void *buf, size_t len, int flags, const struct socka
                     strcat(msg, POSTAMBLE);
                     strcpy(shmSM[i].sbuff[shmSM[i].lastPut], msg);
                     
-                    logger(LOGFILE, "Putting message %s in send buffer at index %d", shmSM[i].sbuff[shmSM[i].lastPut], shmSM[i].lastPut);
+                    logger(LOGFILE, "%s:%d\tPutting message in send buffer at index %d", __FILE__, __LINE__, shmSM[i].lastPut);
                     
                     shmSM[i].currSeq = (shmSM[i].currSeq + 1) % 16;
                     shmSM[i].lastPut = (shmSM[i].lastPut + 1) % 10;
@@ -288,7 +288,7 @@ m_sendto (int sockfd, const void *buf, size_t len, int flags, const struct socka
 
     if (retval != 0)
     {
-        logger(LOGFILE, "Error sending message: %s", strerror(errno));
+        // logger(LOGFILE, "%s:%d\tError sending message: %s", __FILE__, __LINE__, strerror(errno));
     }
 
     return retval;
@@ -322,20 +322,18 @@ m_recvfrom (int sockfd, void *buf, size_t len, int flags, struct sockaddr *src_a
         if (shmSM[i].UDPfd == sockfd)
         {
             int j;
-            // printf("rwnd.base: %d; rwnd.size: %d\n", shmSM[i].rwnd.base, shmSM[i].rwnd.size);
             for (j = (shmSM[i].rwnd.base + shmSM[i].rwnd.size) % 5; j != shmSM[i].rwnd.base; j = (j + 1) % 5)
             {
                 if (shmSM[i].rbuff[j][0] != '\0')
                 {
                     retval = strlen(shmSM[i].rbuff[j]) - strlen(MSG) - SEQ_LEN - strlen(POSTAMBLE);
                     memcpy(buf, shmSM[i].rbuff[j] + strlen(MSG) + SEQ_LEN, retval);
-                    // printf("Received message: %s\n", buf);
                     if (strcmp(buf, "ENOTCONN") == 0)
                     {
                         retval = 0;
                     }
                     
-                    logger(LOGFILE, "Received message %s from receive buffer at index %d", shmSM[i].rbuff[j], j);
+                    logger(LOGFILE, "%s:%d\tReturning to user message from receive buffer at index %d", __FILE__, __LINE__, j);
 
                     memset(shmSM[i].rbuff[j], 0, MAXBUFLEN);
 
@@ -368,7 +366,7 @@ m_recvfrom (int sockfd, void *buf, size_t len, int flags, struct sockaddr *src_a
 
     if (retval < 0)
     {
-        logger(LOGFILE, "Error receiving message: %s", strerror(errno));
+        logger(LOGFILE, "%s:%d\tError receiving message: %s", __FILE__, __LINE__, strerror(errno));
     }
 
     return retval;
@@ -464,7 +462,7 @@ m_close (int sockfd)
 
     if (retval != 0)
     {
-        logger(LOGFILE, "Error closing socket: %s", strerror(errno));
+        logger(LOGFILE, "%s:%d\tError closing socket: %s", __FILE__, __LINE__, strerror(errno));
     }
 
     return retval;

@@ -107,7 +107,7 @@ int main(int argc, char *argv[])
         exit(1);
     }
     printf("Rthread created\n");
-    logger(LOGFILE, "Rthread created");
+    logger(LOGFILE, "%s:%d\tRthread created", __FILE__, __LINE__);
 
     if (pthread_create(&S, NULL, Sthread, (void *)shmSM) != 0)
     {
@@ -115,7 +115,7 @@ int main(int argc, char *argv[])
         exit(1);
     }
     printf("Sthread created\n");
-    logger(LOGFILE, "Sthread created");
+    logger(LOGFILE, "%s:%d\tSthread created", __FILE__, __LINE__);
 
     if (pthread_create(&G, NULL, Gthread, (void *)shmSM) != 0)
     {
@@ -123,7 +123,7 @@ int main(int argc, char *argv[])
         exit(1);
     }
     printf("Gthread created\n");
-    logger(LOGFILE, "Gthread created");
+    logger(LOGFILE, "%s:%d\tGthread created", __FILE__, __LINE__);
 
     while (1)
     {
@@ -138,7 +138,7 @@ int main(int argc, char *argv[])
 
         if (shmSOCK_INFO->sockfd == 0 && shmSOCK_INFO->addr.sin_port == 0 && shmSOCK_INFO->err == 0)
         {
-            logger(LOGFILE, "Creating socket");
+            logger(LOGFILE, "%s:%d\tCreating socket", __FILE__, __LINE__);
             shmSOCK_INFO->sockfd = socket(AF_INET, SOCK_DGRAM, 0);
             if (shmSOCK_INFO->sockfd == -1)
             {
@@ -153,7 +153,7 @@ int main(int argc, char *argv[])
 
         else if (shmSOCK_INFO->sockfd != 0 && shmSOCK_INFO->addr.sin_port != 0)
         {
-            logger(LOGFILE, "Binding socket");
+            logger(LOGFILE, "%s:%d\tBinding socket", __FILE__, __LINE__);
             if (bind(shmSOCK_INFO->sockfd, (struct sockaddr *)&(shmSOCK_INFO->addr), sizeof(shmSOCK_INFO->addr)) == -1)
             {
                 perror("bind");
@@ -167,7 +167,7 @@ int main(int argc, char *argv[])
 
         else if (shmSOCK_INFO->sockfd != 0 && shmSOCK_INFO->addr.sin_port == 0 && shmSOCK_INFO->addr.sin_addr.s_addr == 0)
         {
-            logger(LOGFILE, "Closing socket");
+            logger(LOGFILE, "%s:%d\tClosing socket", __FILE__, __LINE__);
             if (close(shmSOCK_INFO->sockfd) == -1)
             {
                 perror("close");
@@ -181,13 +181,13 @@ int main(int argc, char *argv[])
 
         else
         {
-            logger(LOGFILE, "Invalid request");
+            logger(LOGFILE, "%s:%d\tInvalid request", __FILE__, __LINE__);
             shmSOCK_INFO->err = EINVAL;
         }
 
         if (shmSOCK_INFO->err != 0)
         {
-            logger(LOGFILE, strerror(shmSOCK_INFO->err));
+            logger(LOGFILE, "%s:%d\t%s", __FILE__, __LINE__, strerror(shmSOCK_INFO->err));
         }
 
         if (sem_post(&(shmSOCK_INFO->sem2)) == -1)
@@ -202,21 +202,21 @@ int main(int argc, char *argv[])
         perror("pthread_join");
         exit(1);
     }
-    logger(LOGFILE, "Rthread joined");
+    logger(LOGFILE, "%s:%d\tRthread joined", __FILE__, __LINE__);
 
     if (pthread_join(S, NULL) != 0)
     {
         perror("pthread_join");
         exit(1);
     }
-    logger(LOGFILE, "Sthread joined");
+    logger(LOGFILE, "%s:%d\tSthread joined", __FILE__, __LINE__);
 
     if (pthread_join(G, NULL) != 0)
     {
         perror("pthread_join");
         exit(1);
     }
-    logger(LOGFILE, "Gthread joined");
+    logger(LOGFILE, "%s:%d\tGthread joined", __FILE__, __LINE__);
 
     if (sem_destroy(&shmSOCK_INFO->sem1) == -1)
     {
@@ -314,7 +314,7 @@ Rthread(void *arg)
 
                     if (j == N)
                     {
-                        logger(LOGFILE, "Invalid socket");
+                        logger(LOGFILE, "%s:%d\tInvalid socket", __FILE__, __LINE__);
                         continue;
                     }
 
@@ -344,7 +344,7 @@ Rthread(void *arg)
                     // Handle the MSG messages
                     if (memcmp(msg, MSG, strlen(MSG)) == 0)
                     {
-                        logger(LOGFILE, "Message %s received from %s:%d", msg, inet_ntoa(src_addr.sin_addr), ntohs(src_addr.sin_port));
+                        logger(LOGFILE, "%s:%d\tMessage %s received from %s:%d", __FILE__, __LINE__, msg, inet_ntoa(src_addr.sin_addr), ntohs(src_addr.sin_port));
                         
                         char data[MAXBUFLEN];
                         char seqno[SEQ_LEN + 1];
@@ -372,7 +372,7 @@ Rthread(void *arg)
 
                         if (k == (shm[j].currExpSeq + shm[j].rwnd.size) % 16)
                         {
-                            logger(LOGFILE, "Duplicate message");
+                            logger(LOGFILE, "%s:%d\tDuplicate message", __FILE__, __LINE__);
                         }
                         else
                         {
@@ -400,11 +400,11 @@ Rthread(void *arg)
                                 }
                                 shm[j].rwnd.base = (shm[j].rwnd.base + lastposack) % 5;
                                 shm[j].rwnd.size = 5 - lastposack;
-
+                                shm[j].currExpSeq = (shm[j].currExpSeq + lastposack) % 16;
                             }
                             else
                             {
-                                logger(LOGFILE, "Message received out of order");
+                                logger(LOGFILE, "%s:%d\tMessage recieved out of order", __FILE__, __LINE__);
                             }
                         }
                         char ack[MAXBUFLEN];
@@ -429,13 +429,13 @@ Rthread(void *arg)
                             perror("sendto");
                         }
 
-                        logger(LOGFILE, "ACK sent for sequence number: %d", shm[j].lastAck);
+                        logger(LOGFILE, "%s:%d\tACK sent for sequence number: %d", __FILE__, __LINE__, shm[j].lastAck);
                     }
                     
                     // Handle the ACK messages
                     else if (memcmp(msg, ACK, strlen(ACK)) == 0)
                     {
-                        logger(LOGFILE, "ACK %s received from %s:%d", msg, inet_ntoa(src_addr.sin_addr), ntohs(src_addr.sin_port));
+                        logger(LOGFILE, "%s:%d\tACK %s received from %s:%d", __FILE__, __LINE__, msg, inet_ntoa(src_addr.sin_addr), ntohs(src_addr.sin_port));
                         char data[MAXBUFLEN];
                         char seqno[SEQ_LEN + 1];
                         memset(data, 0, sizeof(data));
@@ -457,7 +457,7 @@ Rthread(void *arg)
 
                         if (k == (shm[j].swnd.base + shm[j].swnd.size) % 10)
                         {
-                            logger(LOGFILE, "Duplicate ACK");
+                            logger(LOGFILE, "%s:%d\tDuplicate ACK", __FILE__, __LINE__);
                         }
                         else
                         {
@@ -473,23 +473,23 @@ Rthread(void *arg)
 
                     else
                     {
-                        logger(LOGFILE, "Invalid message type");
+                        logger(LOGFILE, "%s:%d\tInvalid message type", __FILE__, __LINE__);
                     }
 
                     if (err != 0)
                     {
-                        logger(LOGFILE, strerror(err));
+                        logger(LOGFILE, "%s:%d\t%s", __FILE__, __LINE__, strerror(err));
                     }
                 }
 
                 else
                 {
-                    logger(LOGFILE, "Invalid event");
+                    logger(LOGFILE, "%s:%d\tInvalid event", __FILE__, __LINE__);
                 }
 
                 if (err != 0)
                 {
-                    logger(LOGFILE, strerror(err));
+                    logger(LOGFILE, "%s:%d\t%s", __FILE__, __LINE__, strerror(err));
                 }
             }
         }
@@ -500,7 +500,7 @@ Rthread(void *arg)
             {
                 if (nospace[i] == 1)
                 {
-                    logger(LOGFILE, "Receive window full");
+                    logger(LOGFILE, "%s:%d\tNo space in receive window", __FILE__, __LINE__);
                     if (shm[i].rwnd.size != 0)
                     {
                         char ack[MAXBUFLEN];
@@ -524,7 +524,7 @@ Rthread(void *arg)
                         {
                             perror("sendto");
                         }
-                        logger(LOGFILE, "ACK sent for sequence number: %d", shm[i].lastAck);
+                        logger(LOGFILE, "%s:%d\tACK sent for sequence number: %d", __FILE__, __LINE__, shm[i].lastAck);
 
                         nospace[i] = 0;
                     }
@@ -581,7 +581,7 @@ Sthread(void *arg)
                             }
                         }
                         timedout = 1;
-                        logger(LOGFILE, "Timeout: Resending all messages in the send window");
+                        logger(LOGFILE, "%s:%d\tTimeout: Resending all messages", __FILE__, __LINE__);
                         break;
                     }
                 }
@@ -597,7 +597,7 @@ Sthread(void *arg)
                             {
                                 perror("sendto");
                             }
-                            logger(LOGFILE, "Message sent with sequence number: %d", shm[i].currSeq - 1);
+                            logger(LOGFILE, "%s:%d\tMessage sent with sequence number: %d", __FILE__, __LINE__, shm[i].currSeq - 1);
                         }
                     }
                 }
@@ -640,7 +640,7 @@ Gthread(void *arg)
                         shm[i].rwnd.base = 0;
                         shm[i].currSeq = 0;
 
-                        logger(LOGFILE, "Socket cleaned");
+                        logger(LOGFILE, "%s:%d\tSocket cleaned", __FILE__, __LINE__);
                     }
                 }
             }

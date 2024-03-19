@@ -77,7 +77,8 @@ int main(int argc, char *argv[])
             break;
         }
         
-        // printf("%s", buf);
+        printf("%s", buf);
+        fflush(stdout);
         fprintf(fp, "%s", buf);
         fflush(fp);
 
