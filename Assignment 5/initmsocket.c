@@ -60,11 +60,11 @@ int main(int argc, char *argv[])
         shmSM[i].rwnd.base = 0;
         shmSM[i].currSeq = 0;
         shmSM[i].currExpSeq = 0;
-        shmSM[i].lastAck = 0;
+        shmSM[i].lastAck = 15;
         shmSM[i].lastPut = 0;
     }
     printf("SM initialized\n");
-    logger(LOGFILE, "initsocket.c 67: SM initialized");
+    logger(LOGFILE, "SM initialized");
 
     int shmidSOCK_INFO = shm_open(KEY_SOCK_INFO, O_CREAT | O_RDWR, 0666);
     if (shmidSOCK_INFO == -1)
@@ -99,7 +99,7 @@ int main(int argc, char *argv[])
         exit(1);
     }
     printf("SOCK_INFO initialized\n");
-    logger(LOGFILE, "initsocket.c 102: SOCK_INFO initialized");
+    logger(LOGFILE, "SOCK_INFO initialized");
 
     if (pthread_create(&R, NULL, Rthread, (void *)shmSM) != 0)
     {
@@ -107,7 +107,7 @@ int main(int argc, char *argv[])
         exit(1);
     }
     printf("Rthread created\n");
-    logger(LOGFILE, "initsocket.c 110: Rthread created");
+    logger(LOGFILE, "Rthread created");
 
     if (pthread_create(&S, NULL, Sthread, (void *)shmSM) != 0)
     {
@@ -115,7 +115,7 @@ int main(int argc, char *argv[])
         exit(1);
     }
     printf("Sthread created\n");
-    logger(LOGFILE, "initsocket.c 118: Sthread created");
+    logger(LOGFILE, "Sthread created");
 
     if (pthread_create(&G, NULL, Gthread, (void *)shmSM) != 0)
     {
@@ -123,7 +123,7 @@ int main(int argc, char *argv[])
         exit(1);
     }
     printf("Gthread created\n");
-    logger(LOGFILE, "initsocket.c 126: Gthread created");
+    logger(LOGFILE, "Gthread created");
 
     while (1)
     {
@@ -138,7 +138,7 @@ int main(int argc, char *argv[])
 
         if (shmSOCK_INFO->sockfd == 0 && shmSOCK_INFO->addr.sin_port == 0 && shmSOCK_INFO->err == 0)
         {
-            logger(LOGFILE, "initsocket.c 116: Creating socket");
+            logger(LOGFILE, "Creating socket");
             shmSOCK_INFO->sockfd = socket(AF_INET, SOCK_DGRAM, 0);
             if (shmSOCK_INFO->sockfd == -1)
             {
@@ -153,7 +153,7 @@ int main(int argc, char *argv[])
 
         else if (shmSOCK_INFO->sockfd != 0 && shmSOCK_INFO->addr.sin_port != 0)
         {
-            logger(LOGFILE, "initsocket.c 131: Binding socket");
+            logger(LOGFILE, "Binding socket");
             if (bind(shmSOCK_INFO->sockfd, (struct sockaddr *)&(shmSOCK_INFO->addr), sizeof(shmSOCK_INFO->addr)) == -1)
             {
                 perror("bind");
@@ -167,7 +167,7 @@ int main(int argc, char *argv[])
 
         else if (shmSOCK_INFO->sockfd != 0 && shmSOCK_INFO->addr.sin_port == 0 && shmSOCK_INFO->addr.sin_addr.s_addr == 0)
         {
-            logger(LOGFILE, "initsocket.c 145: Closing socket");
+            logger(LOGFILE, "Closing socket");
             if (close(shmSOCK_INFO->sockfd) == -1)
             {
                 perror("close");
@@ -181,7 +181,7 @@ int main(int argc, char *argv[])
 
         else
         {
-            logger(LOGFILE, "initsocket.c 159: Invalid request");
+            logger(LOGFILE, "Invalid request");
             shmSOCK_INFO->err = EINVAL;
         }
 
@@ -376,11 +376,12 @@ Rthread(void *arg)
                         }
                         else
                         {
-                            memcpy(shm[j].rbuff[shm[j].rwnd.base + pos], data, strlen(data));
+                            memcpy(shm[j].rbuff[shm[j].rwnd.base + pos], msg, strlen(msg));
                             int lastposack = 0;
                             if (pos == 0)
                             {
-                                for (int l = shm[j].rwnd.base; l < (shm[j].rwnd.base + 5) % 5; l = (l + 1) % 5)
+                                int count = 0;
+                                for (int l = shm[j].rwnd.base; ; l = (l + 1) % 5)
                                 {
                                     if (shm[j].rbuff[l][0] != '\0')
                                     {
@@ -388,6 +389,11 @@ Rthread(void *arg)
                                         lastposack++;
                                     }
                                     else
+                                    {
+                                        break;
+                                    }
+                                    count++;
+                                    if (count == shm[j].rwnd.size)
                                     {
                                         break;
                                     }
@@ -438,30 +444,31 @@ Rthread(void *arg)
                         memcpy(seqno, msg + strlen(ACK), SEQ_LEN);
 
                         int k;
-                        for (k = shm[i].swnd.base; k < (shm[i].swnd.base + shm[i].swnd.size) % 10; k = (k + 1) % 10)
+                        for (k = shm[j].swnd.base; k < (shm[j].swnd.base + shm[j].swnd.size) % 10; k = (k + 1) % 10)
                         {
                             char sseqno[SEQ_LEN + 1];
                             memset(sseqno, 0, sizeof(sseqno));
-                            memcpy(sseqno, shm[i].sbuff[k] + strlen(MSG), SEQ_LEN);
+                            memcpy(sseqno, shm[j].sbuff[k] + strlen(MSG), SEQ_LEN);
                             if (memcmp(sseqno, seqno, SEQ_LEN) == 0)
                             {
                                 break;
                             }
                         }
 
-                        if (k == (shm[i].swnd.base + shm[i].swnd.size) % 10)
+                        if (k == (shm[j].swnd.base + shm[j].swnd.size) % 10)
                         {
                             logger(LOGFILE, "Duplicate ACK");
                         }
                         else
                         {
-                            for (int l = shm[i].swnd.base; l <= k; l = (l + 1) % 10)
+                            for (int l = shm[j].swnd.base; l <= k; l = (l + 1) % 10)
                             {
-                                memset(shm[i].sbuff[l], 0, sizeof(shm[i].sbuff[l]));
+                                memset(shm[j].sbuff[l], 0, sizeof(shm[j].sbuff[l]));
+                                shm[j].swnd.timestamp[l] = 0;
                             }
-                            shm[i].swnd.base = (k + 1) % 10;
+                            shm[j].swnd.base = (k + 1) % 10;
                         }
-                        shm[i].swnd.size = atoi(data);
+                        shm[j].swnd.size = atoi(data);
                     }
 
                     else
@@ -590,7 +597,7 @@ Sthread(void *arg)
                             {
                                 perror("sendto");
                             }
-                            logger(LOGFILE, "Message sent with sequence number: %d", shm[i].currSeq);
+                            logger(LOGFILE, "Message sent with sequence number: %d", shm[i].currSeq - 1);
                         }
                     }
                 }

@@ -21,6 +21,9 @@ LIBRARY = libmsocket.a
 
 all: $(INIT_PROG) $(USER1_PROG) $(USER2_PROG) $(LIBRARY)
 
+tar: clean
+	tar -czvf ../../21CS30065_Assignment5.tar.gz *
+
 $(INIT_PROG): $(OBJS_INIT) $(LIBRARY)
 	$(CC) $(CFLAGS) -o $@ $^ -L. -lmsocket -lpthread -lrt
 
@@ -37,4 +40,4 @@ $(LIBRARY): msocket.o
 	$(CC) $(CFLAGS) -c $<
 
 clean:
-	rm -f $(OBJS) $(INIT_PROG) $(USER1_PROG) $(USER2_PROG) $(LIBRARY)
+	rm -f $(OBJS) $(INIT_PROG) $(USER1_PROG) $(USER2_PROG) $(LIBRARY) ../../21CS30065_Assignment5.tar.gz

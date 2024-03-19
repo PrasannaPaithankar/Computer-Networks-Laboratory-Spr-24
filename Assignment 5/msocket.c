@@ -58,7 +58,7 @@ m_socket (int domain, int type, int protocol)
         {
             shmSM[i].isFree = 0;
             shmSM[i].pid = getpid();
-            logger(LOGFILE, "msocket.c 51: Free slot found at index %d", i);
+            logger(LOGFILE, "Free slot found at index %d", i);
             break;
         }
     }
@@ -101,7 +101,7 @@ m_socket (int domain, int type, int protocol)
 
     if (retval != 0)
     {
-        logger(LOGFILE, "msocket.c 94: Error creating socket: %s", strerror(errno));
+        logger(LOGFILE, "Error creating socket: %s", strerror(errno));
     }
 
     return retval;
@@ -190,7 +190,7 @@ m_bind (int sockfd, const struct sockaddr *srcaddr, socklen_t srcaddrlen, const 
 
     if (retval != 0)
     {
-        logger(LOGFILE, "msocket.c 94: Error binding socket: %s", strerror(errno));
+        logger(LOGFILE, "Error binding socket: %s", strerror(errno));
     }
 
     return retval;
@@ -206,8 +206,8 @@ m_sendto (int sockfd, const void *buf, size_t len, int flags, const struct socka
 
     // msg format: MSG<seq><msg>POSTAMBLE
 
-    char msg[1024];
-    memset(msg, 0, 1024);
+    char msg[MAXBUFLEN];
+    memset(msg, 0, MAXBUFLEN);
 
     int shmidSM = shm_open(KEY_SM, O_CREAT | O_RDWR, 0666);
     if (shmidSM == -1)
@@ -250,7 +250,7 @@ m_sendto (int sockfd, const void *buf, size_t len, int flags, const struct socka
                     strcat(msg, POSTAMBLE);
                     strcpy(shmSM[i].sbuff[shmSM[i].lastPut], msg);
                     
-                    logger(LOGFILE, "msocket.c 238: Putting message %s in send buffer at index %d", shmSM[i].sbuff[shmSM[i].lastPut], shmSM[i].lastPut);
+                    logger(LOGFILE, "Putting message %s in send buffer at index %d", shmSM[i].sbuff[shmSM[i].lastPut], shmSM[i].lastPut);
                     
                     shmSM[i].currSeq = (shmSM[i].currSeq + 1) % 16;
                     shmSM[i].lastPut = (shmSM[i].lastPut + 1) % 10;
@@ -288,7 +288,7 @@ m_sendto (int sockfd, const void *buf, size_t len, int flags, const struct socka
 
     if (retval != 0)
     {
-        logger(LOGFILE, "msocket.c 279: Error sending message: %s", strerror(errno));
+        logger(LOGFILE, "Error sending message: %s", strerror(errno));
     }
 
     return retval;
@@ -322,14 +322,23 @@ m_recvfrom (int sockfd, void *buf, size_t len, int flags, struct sockaddr *src_a
         if (shmSM[i].UDPfd == sockfd)
         {
             int j;
+            // printf("rwnd.base: %d; rwnd.size: %d\n", shmSM[i].rwnd.base, shmSM[i].rwnd.size);
             for (j = (shmSM[i].rwnd.base + shmSM[i].rwnd.size) % 5; j != shmSM[i].rwnd.base; j = (j + 1) % 5)
             {
                 if (shmSM[i].rbuff[j][0] != '\0')
                 {
                     retval = strlen(shmSM[i].rbuff[j]) - strlen(MSG) - SEQ_LEN - strlen(POSTAMBLE);
                     memcpy(buf, shmSM[i].rbuff[j] + strlen(MSG) + SEQ_LEN, retval);
+                    // printf("Received message: %s\n", buf);
+                    if (strcmp(buf, "ENOTCONN") == 0)
+                    {
+                        retval = 0;
+                    }
+                    
+                    logger(LOGFILE, "Received message %s from receive buffer at index %d", shmSM[i].rbuff[j], j);
 
-                    logger(LOGFILE, "msocket.c 314: Received message %s from receive buffer at index %d", shmSM[i].rbuff[j], j);
+                    memset(shmSM[i].rbuff[j], 0, MAXBUFLEN);
+
                     break;
                 }
             }
@@ -357,9 +366,9 @@ m_recvfrom (int sockfd, void *buf, size_t len, int flags, struct sockaddr *src_a
 
     close(shmidSM);
 
-    if (retval != 0)
+    if (retval < 0)
     {
-        logger(LOGFILE, "msocket.c 350: Error receiving message: %s", strerror(errno));
+        logger(LOGFILE, "Error receiving message: %s", strerror(errno));
     }
 
     return retval;
@@ -413,6 +422,7 @@ m_close (int sockfd)
         {
             shmSM[i].isFree = 1;
             shmSM[i].pid = 0;
+
             break;
         }
     }
@@ -454,7 +464,7 @@ m_close (int sockfd)
 
     if (retval != 0)
     {
-        logger(LOGFILE, "msocket.c 94: Error closing socket: %s", strerror(errno));
+        logger(LOGFILE, "Error closing socket: %s", strerror(errno));
     }
 
     return retval;

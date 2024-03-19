@@ -1,2 +1,2 @@
-pras@gmail.com pras
-swan@gmail.com swan
+user1@gmail.com user1
+user2@gmail.com user2

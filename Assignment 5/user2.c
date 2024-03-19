@@ -42,16 +42,17 @@ int main(int argc, char *argv[])
 
     printf("Socket bound to port %d\n", atoi(argv[1]));
 
-    int fd = open("file2.txt", O_WRONLY | O_CREAT | O_TRUNC, 0644);
-    if (fd == -1)
+    FILE *fp = fopen("file2.txt", "w");
+    if (fp == NULL)
     {
-        perror("open");
+        perror("fopen");
         return errno;
     }
 
     printf("File opened\n");
 
     char buf[MAXBUFLEN];
+    memset(buf, 0, MAXBUFLEN);
     int n;
     while (1)
     {
@@ -76,16 +77,14 @@ int main(int argc, char *argv[])
             break;
         }
         
-        retval = write(fd, buf, n);
-        if (retval == -1)
-        {
-            perror("write");
-            return errno;
-        }
+        // printf("%s", buf);
+        fprintf(fp, "%s", buf);
+        fflush(fp);
+
         memset(buf, 0, MAXBUFLEN);
     }
 
-    close(fd);
+    fclose(fp);
     m_close(M2);
 
     printf("File received\n");

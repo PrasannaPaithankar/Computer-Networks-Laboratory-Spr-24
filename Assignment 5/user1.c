@@ -49,9 +49,9 @@ int main(int argc, char *argv[])
         return errno;
     }
 
-    char buf[MAXBUFLEN];
+    char buf[MAXBUFLEN - 10];
     int n;
-    while ((n = read(fd, buf, MAXBUFLEN)) > 0)
+    while ((n = read(fd, buf, MAXBUFLEN - 10)) > 0)
     {
         while (m_sendto(M1, buf, n, 0, (struct sockaddr *)&dest_addr, sizeof(dest_addr)) == -1)
         {
@@ -65,10 +65,10 @@ int main(int argc, char *argv[])
                 return errno;
             }
         }
-        memset(buf, 0, MAXBUFLEN);   
+        memset(buf, 0, MAXBUFLEN - 10);   
     }
 
-    sleep(50);
+    sleep(15);
 
     close(fd);
     m_close(M1);    
