@@ -68,7 +68,7 @@ int main(int argc, char *argv[])
         memset(buf, 0, MAXBUFLEN - 10);   
     }
 
-    sleep(15);
+    sleep(50);
 
     close(fd);
     m_close(M1);    

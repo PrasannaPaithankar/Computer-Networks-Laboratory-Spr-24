@@ -322,7 +322,7 @@ m_recvfrom (int sockfd, void *buf, size_t len, int flags, struct sockaddr *src_a
         if (shmSM[i].UDPfd == sockfd)
         {
             int j;
-            for (j = (shmSM[i].rwnd.base + shmSM[i].rwnd.size) % 5; j != shmSM[i].rwnd.base; j = (j + 1) % 5)
+            for (j = shmSM[i].lastGet; shmSM[i].toConsume != 0; j = (j + 1) % 5)
             {
                 if (shmSM[i].rbuff[j][0] != '\0')
                 {
@@ -332,10 +332,12 @@ m_recvfrom (int sockfd, void *buf, size_t len, int flags, struct sockaddr *src_a
                     {
                         retval = 0;
                     }
-                    
-                    logger(LOGFILE, "%s:%d\tReturning to user message from receive buffer at index %d", __FILE__, __LINE__, j);
-
                     memset(shmSM[i].rbuff[j], 0, MAXBUFLEN);
+                    shmSM[i].lastGet = (j + 1) % 5;
+                    shmSM[i].rwnd.size++;
+                    shmSM[i].toConsume--;
+
+                    logger(LOGFILE, "%s:%d\tReturning to user message from receive buffer at index %d", __FILE__, __LINE__, j);
 
                     break;
                 }
@@ -366,7 +368,7 @@ m_recvfrom (int sockfd, void *buf, size_t len, int flags, struct sockaddr *src_a
 
     if (retval < 0)
     {
-        logger(LOGFILE, "%s:%d\tError receiving message: %s", __FILE__, __LINE__, strerror(errno));
+        // logger(LOGFILE, "%s:%d\tError receiving message: %s", __FILE__, __LINE__, strerror(errno));
     }
 
     return retval;
@@ -420,7 +422,22 @@ m_close (int sockfd)
         {
             shmSM[i].isFree = 1;
             shmSM[i].pid = 0;
-
+            shmSM[i].UDPfd = 0;
+            memset(&shmSM[i].addr, 0, sizeof(shmSM[i].addr));
+            memset(shmSM[i].sbuff, 0, sizeof(shmSM[i].sbuff));
+            memset(shmSM[i].rbuff, 0, sizeof(shmSM[i].rbuff));
+            memset(&shmSM[i].swnd, 0, sizeof(shmSM[i].swnd));
+            memset(&shmSM[i].rwnd, 0, sizeof(shmSM[i].rwnd));
+            shmSM[i].swnd.size = 5;
+            shmSM[i].rwnd.size = 5;
+            shmSM[i].swnd.base = 0;
+            shmSM[i].rwnd.base = 0;
+            shmSM[i].currSeq = 0;
+            shmSM[i].currExpSeq = 0;
+            shmSM[i].lastAck = 15;
+            shmSM[i].lastPut = 0;
+            shmSM[i].lastGet = 0;
+            
             break;
         }
     }

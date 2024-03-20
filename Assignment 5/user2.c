@@ -54,6 +54,7 @@ int main(int argc, char *argv[])
     char buf[MAXBUFLEN];
     memset(buf, 0, MAXBUFLEN);
     int n;
+    int count = 0;
     while (1)
     {
         n = -1;
@@ -77,7 +78,7 @@ int main(int argc, char *argv[])
             break;
         }
         
-        printf("%s", buf);
+        printf("%d\n", count++);
         fflush(stdout);
         fprintf(fp, "%s", buf);
         fflush(fp);

@@ -62,6 +62,8 @@ int main(int argc, char *argv[])
         shmSM[i].currExpSeq = 0;
         shmSM[i].lastAck = 15;
         shmSM[i].lastPut = 0;
+        shmSM[i].lastGet = 0;
+        shmSM[i].toConsume = 0;
     }
     printf("SM initialized\n");
     logger(LOGFILE, "SM initialized");
@@ -356,13 +358,15 @@ Rthread(void *arg)
                         int k;
                         int pos = 0;
 
-                        if (shm[j].rwnd.size == 0)
-                        {
-                            nospace[j] = 1;
-                        }
 
-                        for (k = shm[j].currExpSeq; k < (shm[j].currExpSeq + shm[j].rwnd.size) % 16; k = (k + 1) % 16)
+                        int count = 0;
+                        for (k = shm[j].currExpSeq; ; k = (k + 1) % 16)
                         {
+                            if (count == shm[j].rwnd.size)
+                            {
+                                break;
+                            }
+                            count++;
                             if (k == atoi(seqno))
                             {
                                 break;
@@ -376,13 +380,20 @@ Rthread(void *arg)
                         }
                         else
                         {
+                            logger(LOGFILE, "%s:%d\tMessage is put in receive buffer at position: %d", __FILE__, __LINE__, shm[j].rwnd.base + pos);
                             memcpy(shm[j].rbuff[shm[j].rwnd.base + pos], msg, strlen(msg));
-                            int lastposack = 0;
                             if (pos == 0)
                             {
                                 int count = 0;
+                                int lastposack = 0;
                                 for (int l = shm[j].rwnd.base; ; l = (l + 1) % 5)
                                 {
+                                    if (count == shm[j].rwnd.size)
+                                    {
+                                        break;
+                                    }
+                                    count++;
+                                    printf("%d\n", l);
                                     if (shm[j].rbuff[l][0] != '\0')
                                     {
                                         shm[j].lastAck = (shm[j].lastAck + 1) % 16;
@@ -392,15 +403,16 @@ Rthread(void *arg)
                                     {
                                         break;
                                     }
-                                    count++;
-                                    if (count == shm[j].rwnd.size)
-                                    {
-                                        break;
-                                    }
                                 }
                                 shm[j].rwnd.base = (shm[j].rwnd.base + lastposack) % 5;
-                                shm[j].rwnd.size = 5 - lastposack;
+                                shm[j].rwnd.size -= lastposack;
+                                shm[j].toConsume += lastposack;
                                 shm[j].currExpSeq = (shm[j].currExpSeq + lastposack) % 16;
+                                if (shm[j].rwnd.size == 0)
+                                {
+                                    nospace[j] = 1;
+                                }
+                                printf("Last Ack: %d; Last Exp Seq: %d; Base: %d; Size: %d\n", shm[j].lastAck, shm[j].currExpSeq, shm[j].rwnd.base, shm[j].rwnd.size);
                             }
                             else
                             {
@@ -443,9 +455,14 @@ Rthread(void *arg)
                         memcpy(data, msg + strlen(ACK) + SEQ_LEN, strlen(msg) - strlen(ACK) - strlen(POSTAMBLE) - SEQ_LEN);
                         memcpy(seqno, msg + strlen(ACK), SEQ_LEN);
 
-                        int k;
-                        for (k = shm[j].swnd.base; k < (shm[j].swnd.base + shm[j].swnd.size) % 10; k = (k + 1) % 10)
+                        int k, count = 0;
+                        for (k = shm[j].swnd.base; ; k = (k + 1) % 10)
                         {
+                            if (count == shm[j].swnd.size)
+                            {
+                                break;
+                            }
+                            count++;
                             char sseqno[SEQ_LEN + 1];
                             memset(sseqno, 0, sizeof(sseqno));
                             memcpy(sseqno, shm[j].sbuff[k] + strlen(MSG), SEQ_LEN);
@@ -461,8 +478,14 @@ Rthread(void *arg)
                         }
                         else
                         {
-                            for (int l = shm[j].swnd.base; l <= k; l = (l + 1) % 10)
+                            int cnt = 0;
+                            for (int l = shm[j].swnd.base; ; l = (l + 1) % 10)
                             {
+                                if (cnt == count)
+                                {
+                                    break;
+                                }
+                                cnt++;
                                 memset(shm[j].sbuff[l], 0, sizeof(shm[j].sbuff[l]));
                                 shm[j].swnd.timestamp[l] = 0;
                             }
@@ -478,7 +501,7 @@ Rthread(void *arg)
 
                     if (err != 0)
                     {
-                        logger(LOGFILE, "%s:%d\t%s", __FILE__, __LINE__, strerror(err));
+                        // logger(LOGFILE, "%s:%d\t%s", __FILE__, __LINE__, strerror(err));
                     }
                 }
 
@@ -489,7 +512,7 @@ Rthread(void *arg)
 
                 if (err != 0)
                 {
-                    logger(LOGFILE, "%s:%d\t%s", __FILE__, __LINE__, strerror(err));
+                    // logger(LOGFILE, "%s:%d\t%s", __FILE__, __LINE__, strerror(err));
                 }
             }
         }
@@ -539,7 +562,7 @@ Rthread(void *arg)
                     ev.data.fd = shm[i].UDPfd;
                     if (epoll_ctl(epollfd, EPOLL_CTL_ADD, shm[i].UDPfd, &ev) == -1)
                     {
-                        perror("epoll_ctl");
+                        // perror("epoll_ctl");
                         err = errno;
                     }
                 }
@@ -547,7 +570,7 @@ Rthread(void *arg)
 
             if (err != 0)
             {
-                logger(LOGFILE, strerror(err));
+                // logger(LOGFILE, strerror(err));
             }
         }
     }
@@ -568,12 +591,24 @@ Sthread(void *arg)
             if (shm[i].isFree == 0)
             {
                 int timedout = 0;
-                for (int j = shm[i].swnd.base; j < (shm[i].swnd.base + shm[i].swnd.size) % 10; j = (j + 1) % 10)
+                int count = 0;
+                for (int j = shm[i].swnd.base; ; j = (j + 1) % 10)
                 {
+                    if (count == shm[i].swnd.size)
+                    {
+                        break;
+                    }
+                    count++;
                     if (shm[i].swnd.timestamp[j] != 0 && (time(NULL) - shm[i].swnd.timestamp[j]) > T)
                     {
-                        for (int k = shm[i].swnd.base; k < (shm[i].swnd.base + shm[i].swnd.size) % 10; k++)
+                        int cnt = 0;
+                        for (int k = shm[i].swnd.base; ; k++)
                         {
+                            if (cnt == shm[i].swnd.size)
+                            {
+                                break;
+                            }
+                            cnt++;
                             shm[i].swnd.timestamp[k] = time(NULL);
                             if (sendto(shm[i].UDPfd, shm[i].sbuff[k], strlen(shm[i].sbuff[k]), 0, (struct sockaddr *)&(shm[i].addr), sizeof(shm[i].addr)) == -1)
                             {
@@ -581,14 +616,20 @@ Sthread(void *arg)
                             }
                         }
                         timedout = 1;
-                        logger(LOGFILE, "%s:%d\tTimeout: Resending all messages", __FILE__, __LINE__);
+                        logger(LOGFILE, "%s:%d\tTimeout: Resending %d messages", __FILE__, __LINE__, shm[i].swnd.size);
                         break;
                     }
                 }
                 if (timedout == 0)
                 {
-                    for (int j = shm[i].swnd.base; j < (shm[i].swnd.base + shm[i].swnd.size) % 10; j = (j + 1) % 10)
+                    count = 0;
+                    for (int j = shm[i].swnd.base; ; j = (j + 1) % 10)
                     {
+                        if (count == shm[i].swnd.size)
+                        {
+                            break;
+                        }
+                        count++;
                         if (shm[i].swnd.timestamp[j] == 0 && shm[i].sbuff[j][0] != '\0')
                         {
                             shm[i].swnd.timestamp[j] = time(NULL);
@@ -603,8 +644,7 @@ Sthread(void *arg)
                 }
             }
         }
-
-        sleep(T / 4);
+        sleep(T / 2);
     }
 
     return NULL;
@@ -639,6 +679,10 @@ Gthread(void *arg)
                         shm[i].swnd.base = 0;
                         shm[i].rwnd.base = 0;
                         shm[i].currSeq = 0;
+                        shm[i].currExpSeq = 0;
+                        shm[i].lastAck = 15;
+                        shm[i].lastPut = 0;
+                        shm[i].lastGet = 0;
 
                         logger(LOGFILE, "%s:%d\tSocket cleaned", __FILE__, __LINE__);
                     }
