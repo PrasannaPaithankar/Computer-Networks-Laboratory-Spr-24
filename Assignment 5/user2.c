@@ -42,7 +42,7 @@ int main(int argc, char *argv[])
 
     printf("Socket bound to port %d\n", atoi(argv[1]));
 
-    FILE *fp = fopen("file2.txt", "w");
+    FILE *fp = fopen("file3.txt", "w");
     if (fp == NULL)
     {
         perror("fopen");
@@ -55,12 +55,12 @@ int main(int argc, char *argv[])
     memset(buf, 0, MAXBUFLEN);
     int n;
     int count = 0;
+    sleep(3);
     while (1)
     {
         n = -1;
         while (n == -1)
         {
-            sleep(2);
             // printf("Waiting for data...\n");
             n = m_recvfrom(M2, buf, MAXBUFLEN, 0, (struct sockaddr *)&dest_addr, sizeof(dest_addr));
             if (errno == ENOMSG)

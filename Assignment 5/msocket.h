@@ -42,6 +42,7 @@
 
     #define T 5
     #define N 25
+    #define P 0.2
 
     #define MSG "MSG"
     #define ACK "ACK"

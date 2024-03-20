@@ -343,160 +343,167 @@ Rthread(void *arg)
                         }
                     }
 
-                    // Handle the MSG messages
-                    if (memcmp(msg, MSG, strlen(MSG)) == 0)
+                    if (dropMessage(P) == 0)
                     {
-                        logger(LOGFILE, "%s:%d\tMessage %s received from %s:%d", __FILE__, __LINE__, msg, inet_ntoa(src_addr.sin_addr), ntohs(src_addr.sin_port));
-                        
-                        char data[MAXBUFLEN];
-                        char seqno[SEQ_LEN + 1];
-                        memset(data, 0, sizeof(data));
-                        memset(seqno, 0, sizeof(seqno));
-                        memcpy(data, msg + strlen(MSG) + SEQ_LEN, strlen(msg) - strlen(MSG) - strlen(POSTAMBLE) - SEQ_LEN);
-                        memcpy(seqno, msg + strlen(MSG), SEQ_LEN);
+                        // Handle the MSG messages
+                        if (memcmp(msg, MSG, strlen(MSG)) == 0)
+                        {
+                            logger(LOGFILE, "%s:%d\tMessage %s received from %s:%d", __FILE__, __LINE__, msg, inet_ntoa(src_addr.sin_addr), ntohs(src_addr.sin_port));
+                            
+                            char data[MAXBUFLEN];
+                            char seqno[SEQ_LEN + 1];
+                            memset(data, 0, sizeof(data));
+                            memset(seqno, 0, sizeof(seqno));
+                            memcpy(data, msg + strlen(MSG) + SEQ_LEN, strlen(msg) - strlen(MSG) - strlen(POSTAMBLE) - SEQ_LEN);
+                            memcpy(seqno, msg + strlen(MSG), SEQ_LEN);
 
-                        int k;
-                        int pos = 0;
+                            int k;
+                            int pos = 0;
 
 
-                        int count = 0;
-                        for (k = shm[j].currExpSeq; ; k = (k + 1) % 16)
-                        {
-                            if (count == shm[j].rwnd.size)
+                            int count = 0;
+                            for (k = shm[j].currExpSeq; ; k = (k + 1) % 16)
                             {
-                                break;
-                            }
-                            count++;
-                            if (k == atoi(seqno))
-                            {
-                                break;
-                            }
-                            pos++;
-                        }
-
-                        if (k == (shm[j].currExpSeq + shm[j].rwnd.size) % 16)
-                        {
-                            logger(LOGFILE, "%s:%d\tDuplicate message", __FILE__, __LINE__);
-                        }
-                        else
-                        {
-                            logger(LOGFILE, "%s:%d\tMessage is put in receive buffer at position: %d", __FILE__, __LINE__, shm[j].rwnd.base + pos);
-                            memcpy(shm[j].rbuff[shm[j].rwnd.base + pos], msg, strlen(msg));
-                            if (pos == 0)
-                            {
-                                int count = 0;
-                                int lastposack = 0;
-                                for (int l = shm[j].rwnd.base; ; l = (l + 1) % 5)
-                                {
-                                    if (count == shm[j].rwnd.size)
-                                    {
-                                        break;
-                                    }
-                                    count++;
-                                    printf("%d\n", l);
-                                    if (shm[j].rbuff[l][0] != '\0')
-                                    {
-                                        shm[j].lastAck = (shm[j].lastAck + 1) % 16;
-                                        lastposack++;
-                                    }
-                                    else
-                                    {
-                                        break;
-                                    }
-                                }
-                                shm[j].rwnd.base = (shm[j].rwnd.base + lastposack) % 5;
-                                shm[j].rwnd.size -= lastposack;
-                                shm[j].toConsume += lastposack;
-                                shm[j].currExpSeq = (shm[j].currExpSeq + lastposack) % 16;
-                                if (shm[j].rwnd.size == 0)
-                                {
-                                    nospace[j] = 1;
-                                }
-                                printf("Last Ack: %d; Last Exp Seq: %d; Base: %d; Size: %d\n", shm[j].lastAck, shm[j].currExpSeq, shm[j].rwnd.base, shm[j].rwnd.size);
-                            }
-                            else
-                            {
-                                logger(LOGFILE, "%s:%d\tMessage recieved out of order", __FILE__, __LINE__);
-                            }
-                        }
-                        char ack[MAXBUFLEN];
-                        memset(ack, 0, sizeof(ack));
-                        strcpy(ack, ACK);
-                        char sseqno[SEQ_LEN + 1];
-                        if (shm[j].lastAck < 10)
-                        {
-                            sprintf(sseqno, "0%d", shm[j].lastAck);
-                        }
-                        else
-                        {
-                            sprintf(sseqno, "%d", shm[j].lastAck);
-                        }
-                        strcat(ack, sseqno);
-                        char ssize[SEQ_LEN + 1];
-                        sprintf(ssize, "%d", shm[j].rwnd.size);
-                        strcat(ack, ssize);
-                        strcat(ack, POSTAMBLE);
-                        if (sendto(shm[j].UDPfd, ack, strlen(ack), 0, (struct sockaddr *)&src_addr, addrlen) == -1)
-                        {
-                            perror("sendto");
-                        }
-
-                        logger(LOGFILE, "%s:%d\tACK sent for sequence number: %d", __FILE__, __LINE__, shm[j].lastAck);
-                    }
-                    
-                    // Handle the ACK messages
-                    else if (memcmp(msg, ACK, strlen(ACK)) == 0)
-                    {
-                        logger(LOGFILE, "%s:%d\tACK %s received from %s:%d", __FILE__, __LINE__, msg, inet_ntoa(src_addr.sin_addr), ntohs(src_addr.sin_port));
-                        char data[MAXBUFLEN];
-                        char seqno[SEQ_LEN + 1];
-                        memset(data, 0, sizeof(data));
-                        memset(seqno, 0, sizeof(seqno));
-                        memcpy(data, msg + strlen(ACK) + SEQ_LEN, strlen(msg) - strlen(ACK) - strlen(POSTAMBLE) - SEQ_LEN);
-                        memcpy(seqno, msg + strlen(ACK), SEQ_LEN);
-
-                        int k, count = 0;
-                        for (k = shm[j].swnd.base; ; k = (k + 1) % 10)
-                        {
-                            if (count == shm[j].swnd.size)
-                            {
-                                break;
-                            }
-                            count++;
-                            char sseqno[SEQ_LEN + 1];
-                            memset(sseqno, 0, sizeof(sseqno));
-                            memcpy(sseqno, shm[j].sbuff[k] + strlen(MSG), SEQ_LEN);
-                            if (memcmp(sseqno, seqno, SEQ_LEN) == 0)
-                            {
-                                break;
-                            }
-                        }
-
-                        if (k == (shm[j].swnd.base + shm[j].swnd.size) % 10)
-                        {
-                            logger(LOGFILE, "%s:%d\tDuplicate ACK", __FILE__, __LINE__);
-                        }
-                        else
-                        {
-                            int cnt = 0;
-                            for (int l = shm[j].swnd.base; ; l = (l + 1) % 10)
-                            {
-                                if (cnt == count)
+                                if (count == shm[j].rwnd.size)
                                 {
                                     break;
                                 }
-                                cnt++;
-                                memset(shm[j].sbuff[l], 0, sizeof(shm[j].sbuff[l]));
-                                shm[j].swnd.timestamp[l] = 0;
+                                count++;
+                                if (k == atoi(seqno))
+                                {
+                                    break;
+                                }
+                                pos++;
                             }
-                            shm[j].swnd.base = (k + 1) % 10;
+
+                            if (k == (shm[j].currExpSeq + shm[j].rwnd.size) % 16)
+                            {
+                                logger(LOGFILE, "%s:%d\tDuplicate message", __FILE__, __LINE__);
+                            }
+                            else
+                            {
+                                logger(LOGFILE, "%s:%d\tMessage is put in receive buffer at position: %d", __FILE__, __LINE__, shm[j].rwnd.base + pos);
+                                memcpy(shm[j].rbuff[shm[j].rwnd.base + pos], msg, strlen(msg));
+                                if (pos == 0)
+                                {
+                                    int count = 0;
+                                    int lastposack = 0;
+                                    for (int l = shm[j].rwnd.base; ; l = (l + 1) % 5)
+                                    {
+                                        if (count == shm[j].rwnd.size)
+                                        {
+                                            break;
+                                        }
+                                        count++;
+                                        if (shm[j].rbuff[l][0] != '\0')
+                                        {
+                                            shm[j].lastAck = (shm[j].lastAck + 1) % 16;
+                                            lastposack++;
+                                        }
+                                        else
+                                        {
+                                            break;
+                                        }
+                                    }
+                                    shm[j].rwnd.base = (shm[j].rwnd.base + lastposack) % 5;
+                                    shm[j].rwnd.size -= lastposack;
+                                    shm[j].toConsume += lastposack;
+                                    shm[j].currExpSeq = (shm[j].currExpSeq + lastposack) % 16;
+                                    if (shm[j].rwnd.size == 0)
+                                    {
+                                        nospace[j] = 1;
+                                    }
+                                }
+                                else
+                                {
+                                    logger(LOGFILE, "%s:%d\tMessage recieved out of order", __FILE__, __LINE__);
+                                }
+                            }
+                            char ack[MAXBUFLEN];
+                            memset(ack, 0, sizeof(ack));
+                            strcpy(ack, ACK);
+                            char sseqno[SEQ_LEN + 1];
+                            if (shm[j].lastAck < 10)
+                            {
+                                sprintf(sseqno, "0%d", shm[j].lastAck);
+                            }
+                            else
+                            {
+                                sprintf(sseqno, "%d", shm[j].lastAck);
+                            }
+                            strcat(ack, sseqno);
+                            char ssize[SEQ_LEN + 1];
+                            sprintf(ssize, "%d", shm[j].rwnd.size);
+                            strcat(ack, ssize);
+                            strcat(ack, POSTAMBLE);
+                            if (sendto(shm[j].UDPfd, ack, strlen(ack), 0, (struct sockaddr *)&src_addr, addrlen) == -1)
+                            {
+                                perror("sendto");
+                            }
+
+                            logger(LOGFILE, "%s:%d\tACK sent for sequence number: %d", __FILE__, __LINE__, shm[j].lastAck);
                         }
-                        shm[j].swnd.size = atoi(data);
+                        
+                        // Handle the ACK messages
+                        else if (memcmp(msg, ACK, strlen(ACK)) == 0)
+                        {
+                            logger(LOGFILE, "%s:%d\tACK %s received from %s:%d", __FILE__, __LINE__, msg, inet_ntoa(src_addr.sin_addr), ntohs(src_addr.sin_port));
+                            char data[MAXBUFLEN];
+                            char seqno[SEQ_LEN + 1];
+                            memset(data, 0, sizeof(data));
+                            memset(seqno, 0, sizeof(seqno));
+                            memcpy(data, msg + strlen(ACK) + SEQ_LEN, strlen(msg) - strlen(ACK) - strlen(POSTAMBLE) - SEQ_LEN);
+                            memcpy(seqno, msg + strlen(ACK), SEQ_LEN);
+
+                            int k, count = 0;
+                            for (k = shm[j].swnd.base; ; k = (k + 1) % 10)
+                            {
+                                if (count == shm[j].swnd.size)
+                                {
+                                    break;
+                                }
+                                count++;
+                                char sseqno[SEQ_LEN + 1];
+                                memset(sseqno, 0, sizeof(sseqno));
+                                memcpy(sseqno, shm[j].sbuff[k] + strlen(MSG), SEQ_LEN);
+                                if (memcmp(sseqno, seqno, SEQ_LEN) == 0)
+                                {
+                                    break;
+                                }
+                            }
+
+                            if (k == (shm[j].swnd.base + shm[j].swnd.size) % 10)
+                            {
+                                logger(LOGFILE, "%s:%d\tDuplicate ACK", __FILE__, __LINE__);
+                            }
+                            else
+                            {
+                                int cnt = 0;
+                                for (int l = shm[j].swnd.base; ; l = (l + 1) % 10)
+                                {
+                                    if (cnt == count)
+                                    {
+                                        break;
+                                    }
+                                    cnt++;
+                                    memset(shm[j].sbuff[l], 0, sizeof(shm[j].sbuff[l]));
+                                    shm[j].swnd.timestamp[l] = 0;
+                                }
+                                shm[j].swnd.base = (k + 1) % 10;
+                            }
+                            shm[j].swnd.size = atoi(data);
+                        }
+
+                        else
+                        {
+                            logger(LOGFILE, "%s:%d\tInvalid message type", __FILE__, __LINE__);
+                        }
                     }
 
                     else
                     {
-                        logger(LOGFILE, "%s:%d\tInvalid message type", __FILE__, __LINE__);
+                        printf("Message dropped\n");
+                        logger(LOGFILE, "%s:%d\tMessage dropped", __FILE__, __LINE__);
                     }
 
                     if (err != 0)
