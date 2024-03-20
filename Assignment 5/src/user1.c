@@ -42,7 +42,7 @@ int main(int argc, char *argv[])
 
     printf("Socket bound to port %d\n", atoi(argv[1]));
 
-    int fd = open("file.txt", O_RDONLY);
+    int fd = open("./test/file2.txt", O_RDONLY);
     if (fd == -1)
     {
         perror("open");
@@ -68,7 +68,7 @@ int main(int argc, char *argv[])
         memset(buf, 0, MAXBUFLEN - 10);   
     }
 
-    sleep(50);
+    sleep(10);
 
     close(fd);
     m_close(M1);    

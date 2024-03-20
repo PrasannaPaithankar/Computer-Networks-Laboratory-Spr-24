@@ -13,7 +13,7 @@
 #include <string.h>
 #include <sys/socket.h>
 #include <sys/types.h>
-#include <sys/un.h>
+#include <time.h>
 #include <unistd.h>
 #include <errno.h>
 #include <signal.h>
@@ -22,9 +22,6 @@
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <sys/mman.h>
-#include <sys/wait.h>
-#include <time.h>
-#include <sys/time.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <netdb.h>
@@ -37,15 +34,17 @@
     #define SOCK_MTP SOCK_DGRAM
 
     #define MAXBUFLEN 1024
+    #define MAXCLOSECALLS 5
 
-    #define LOGFILE "log.txt"
+    #define LOGFILE "logs/log.txt"
 
     #define T 5
     #define N 25
-    #define P 0.2
+    #define P 0
 
     #define MSG "MSG"
     #define ACK "ACK"
+    #define CLOSE "CLOSE"
     #define SEQ_LEN 2
     #define POSTAMBLE "END"
 
@@ -57,9 +56,9 @@
 
 struct window
 {
-    int                 size;                       // for swnd: max number of messages that can be sent w/o ack; for rwnd: max number of messages that can be received
-    int                 base;                       // for swnd: sequence number of the first message in the window; for rwnd: sequence number of the first message expected to be received
-    time_t              timestamp[10];              // for swnd: contains the time at which the message was sent; for rwnd: contains the time at which the message was received
+    int                 size;               // for swnd: max number of messages that can be sent w/o ack; for rwnd: max number of messages that can be received
+    int                 base;               // for swnd: sequence number of the first message in the window; for rwnd: sequence number of the first message expected to be received
+    time_t              timestamp[10];      // for swnd: contains the time at which the message was sent
 };
 
 struct SM
@@ -84,6 +83,7 @@ struct SOCK_INFO
 {
     sem_t               sem1;       // Semaphore 1
     sem_t               sem2;       // Semaphore 2
+    sem_t               sem3;       // Semaphore 3
     int                 sockfd;     // Socket file descriptor
     struct sockaddr_in  addr;       // Address of this machine
     int                 err;        // Error code

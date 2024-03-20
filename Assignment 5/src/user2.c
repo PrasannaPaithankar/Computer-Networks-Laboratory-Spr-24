@@ -42,7 +42,7 @@ int main(int argc, char *argv[])
 
     printf("Socket bound to port %d\n", atoi(argv[1]));
 
-    FILE *fp = fopen("file3.txt", "w");
+    FILE *fp = fopen("./test/file3.txt", "w");
     if (fp == NULL)
     {
         perror("fopen");
@@ -55,7 +55,6 @@ int main(int argc, char *argv[])
     memset(buf, 0, MAXBUFLEN);
     int n;
     int count = 0;
-    sleep(3);
     while (1)
     {
         n = -1;

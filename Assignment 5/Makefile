@@ -6,38 +6,57 @@
 
 CC = gcc
 CFLAGS = -Wall -Wextra -g -pedantic -O2
+LDFLAGS = -lrt -pthread -lmsocket
 
-# Object files
-OBJS_INIT = initmsocket.o msocket.o
-OBJS = msocket.o user1.o user2.o initmsocket.o msocket.o
-
-# Target executable
-INIT_PROG = initmsocket
-USER1_PROG = user1
-USER2_PROG = user2
-
-# Library file
 LIBRARY = libmsocket.a
+BINARIES = initmsocket user1 user2
 
-all: $(INIT_PROG) $(USER1_PROG) $(USER2_PROG) $(LIBRARY)
+SRC_DIR = src
+OBJ_DIR = obj
+BIN_DIR = bin
+LOG_DIR = logs
 
-tar: clean
-	tar -czvf ../../21CS30065_Assignment5.tar.gz *
+SRCS = $(wildcard $(SRC_DIR)/*.c)
+OBJS = $(patsubst $(SRC_DIR)/%.c,$(OBJ_DIR)/%.o,$(SRCS))
+LIBOBJ = $(OBJ_DIR)/msocket.o
 
-$(INIT_PROG): $(OBJS_INIT) $(LIBRARY)
-	$(CC) $(CFLAGS) -o $@ $^ -L. -lmsocket -lpthread -lrt
+.PHONY: all dir clean tar run runkde rungnome
 
-$(USER1_PROG): user1.o $(LIBRARY)
-	$(CC) $(CFLAGS) -o $@ $^ -L. -lmsocket -lpthread -lrt
+all: dir $(LIBRARY) $(BINARIES)
 
-$(USER2_PROG): user2.o $(LIBRARY)
-	$(CC) $(CFLAGS) -o $@ $^ -L. -lmsocket -lpthread -lrt
-
-$(LIBRARY): msocket.o
+$(LIBRARY): $(LIBOBJ)
 	ar rcs $@ $^
 
-%.o: %.c
-	$(CC) $(CFLAGS) -c $<
+$(BINARIES): %: $(OBJ_DIR)/%.o $(LIBRARY)
+	$(CC) $(CFLAGS) $< -o $(BIN_DIR)/$@ -L. $(LDFLAGS)
 
+$(OBJ_DIR)/%.o: $(SRC_DIR)/%.c
+	$(CC) $(CFLAGS) -c $< -o $@
+
+dir:
+	mkdir -p $(OBJ_DIR) $(BIN_DIR) $(LOG_DIR)
+	-touch $(LOG_DIR)/log.txt
+
+tar:
+	tar -czvf assignment5.tar.gz $(SRC_DIR) Makefile
+
+run:
+	@./$(BIN_DIR)/initmsocket &
+	@./$(BIN_DIR)/user1 20000 20001 127.0.0.1 &
+	@./$(BIN_DIR)/user2 20001 20000 127.0.0.1 &
+	@echo "Running the programs"
+
+runkde:
+	@konsole --new-tab --hold -e ./$(BIN_DIR)/initmsocket &
+	@konsole --new-tab --hold -e ./$(BIN_DIR)/user1 20000 20001 127.0.0.1 &
+	@konsole --new-tab --hold -e ./$(BIN_DIR)/user2 20001 20000 127.0.0.1 &
+	@echo "Running the programs"
+
+rungnome:
+	@gnome-terminal --tab --title="initmsocket" --command="bash -c './$(BIN_DIR)/initmsocket; exec bash'" \
+	--tab --title="user1" --command="bash -c './$(BIN_DIR)/user1 20000 20001 127.0.0.1; exec bash'" \
+	--tab --title="user2" --command="bash -c './$(BIN_DIR)/user2 20001 20000 127.0.0.1; exec bash" &
+	@echo "Running the programs"
+	
 clean:
-	rm -f $(OBJS) $(INIT_PROG) $(USER1_PROG) $(USER2_PROG) $(LIBRARY) ../../21CS30065_Assignment5.tar.gz
+	rm -rf $(LIBRARY) $(BINARIES) $(OBJS) $(LIBOBJ) $(BIN_DIR)/* $(OBJ_DIR)/* assignment5.tar.gz

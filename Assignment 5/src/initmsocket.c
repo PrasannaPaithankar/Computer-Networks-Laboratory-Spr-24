@@ -11,19 +11,39 @@
 
 #include "msocket.h"
 
-void *Rthread(void *arg);
+/* Benchmarking parameters */
+int totalMessages = 0;
+int totalTransmissions = 0;
 
-void *Sthread(void *arg);
+/* Semaphore for closing the socket */
+sem_t initSem;
 
-void *Gthread(void *arg);
+/* Function prototypes */
+void *
+Rthread(void *arg);
 
-int main(int argc, char *argv[])
+void *
+Sthread(void *arg);
+
+void *
+Gthread(void *arg);
+
+
+/*
+ *  Function:   main
+ *  -------------
+ *  Description:    Initializes the shared memory and semaphores, creates the R, S and G threads,
+ *                  and handles the socket creation, binding and closing requests
+ */
+int
+main(int argc, char *argv[])
 {
     pthread_t R, S, G;
 
     int sizeSM = N * sizeof(struct SM);
     int sizeSOCK_INFO = sizeof(struct SOCK_INFO);
 
+    /* Initialize shared memory SM */
     int shmidSM = shm_open(KEY_SM, O_CREAT | O_RDWR, 0666);
     if (shmidSM == -1)
     {
@@ -31,12 +51,14 @@ int main(int argc, char *argv[])
         exit(1);
     }
 
+    /* Truncate the shared memory to the required size */
     if (ftruncate(shmidSM, sizeSM) == -1)
     {
         perror("ftruncate");
         exit(1);
     }
 
+    /* Map the shared memory to the process's address space */
     struct SM *shmSM = mmap(0, sizeSM, PROT_READ | PROT_WRITE, MAP_SHARED, shmidSM, 0);
     if (shmSM == MAP_FAILED)
     {
@@ -44,6 +66,7 @@ int main(int argc, char *argv[])
         exit(1);
     }
 
+    /* Initialize the shared memory */
     for (int i = 0; i < N; i++)
     {
         shmSM[i].isFree = 1;
@@ -68,6 +91,7 @@ int main(int argc, char *argv[])
     printf("SM initialized\n");
     logger(LOGFILE, "SM initialized");
 
+    /* Initialize shared memory SOCK_INFO */
     int shmidSOCK_INFO = shm_open(KEY_SOCK_INFO, O_CREAT | O_RDWR, 0666);
     if (shmidSOCK_INFO == -1)
     {
@@ -75,12 +99,14 @@ int main(int argc, char *argv[])
         exit(1);
     }
 
+    /* Truncate the shared memory to the required size */
     if (ftruncate(shmidSOCK_INFO, sizeSOCK_INFO) == -1)
     {
         perror("ftruncate");
         exit(1);
     }
 
+    /* Map the shared memory to the process's address space */
     struct SOCK_INFO *shmSOCK_INFO = mmap(0, sizeSOCK_INFO, PROT_READ | PROT_WRITE, MAP_SHARED, shmidSOCK_INFO, 0);
     if (shmSOCK_INFO == MAP_FAILED)
     {
@@ -89,6 +115,7 @@ int main(int argc, char *argv[])
     }
     memset(shmSOCK_INFO, 0, sizeSOCK_INFO);
 
+    /* Initialize the semaphores */
     if (sem_init(&shmSOCK_INFO->sem1, 1, 0) == -1)
     {
         perror("sem_init");
@@ -103,6 +130,13 @@ int main(int argc, char *argv[])
     printf("SOCK_INFO initialized\n");
     logger(LOGFILE, "SOCK_INFO initialized");
 
+    if (sem_init(&initSem, 1, 0) == -1)
+    {
+        perror("sem_init");
+        exit(1);
+    }
+
+    /* Create the R, S and G threads */
     if (pthread_create(&R, NULL, Rthread, (void *)shmSM) != 0)
     {
         perror("pthread_create");
@@ -127,8 +161,10 @@ int main(int argc, char *argv[])
     printf("Gthread created\n");
     logger(LOGFILE, "%s:%d\tGthread created", __FILE__, __LINE__);
 
+    /* Handle the socket creation, binding and closing requests */
     while (1)
     {
+        /* Wait for the request */
         if (sem_wait(&(shmSOCK_INFO->sem1)) == -1)
         {
             perror("sem_wait");
@@ -138,6 +174,7 @@ int main(int argc, char *argv[])
         char srcIP[INET_ADDRSTRLEN];
         inet_ntop(AF_INET, &(shmSOCK_INFO->addr.sin_addr), srcIP, INET_ADDRSTRLEN);
 
+        /* Handle create socket request */
         if (shmSOCK_INFO->sockfd == 0 && shmSOCK_INFO->addr.sin_port == 0 && shmSOCK_INFO->err == 0)
         {
             logger(LOGFILE, "%s:%d\tCreating socket", __FILE__, __LINE__);
@@ -153,6 +190,7 @@ int main(int argc, char *argv[])
             }
         }
 
+        /* Handle bind socket request */
         else if (shmSOCK_INFO->sockfd != 0 && shmSOCK_INFO->addr.sin_port != 0)
         {
             logger(LOGFILE, "%s:%d\tBinding socket", __FILE__, __LINE__);
@@ -167,18 +205,80 @@ int main(int argc, char *argv[])
             }
         }
 
+        /* Handle close socket request */
         else if (shmSOCK_INFO->sockfd != 0 && shmSOCK_INFO->addr.sin_port == 0 && shmSOCK_INFO->addr.sin_addr.s_addr == 0)
         {
-            logger(LOGFILE, "%s:%d\tClosing socket", __FILE__, __LINE__);
-            if (close(shmSOCK_INFO->sockfd) == -1)
+            int i;
+            for (i = 0; i < N; i++)
             {
-                perror("close");
+                if (shmSM[i].isFree == 0)
+                {
+                    if (shmSM[i].UDPfd == shmSOCK_INFO->sockfd)
+                    {
+                        break;
+                    }
+                }
+            }
+
+            struct timespec ts;
+            if (clock_gettime(CLOCK_REALTIME, &ts) == -1)
+            {
                 shmSOCK_INFO->err = errno;
             }
-            else
+            ts.tv_sec += (T/2);
+
+            int count = 0;
+            /* Send CLOSE message at most MAXCLOSECALLS times */
+            char closemsg[MAXBUFLEN];
+            while (1)
             {
-                shmSOCK_INFO->err = 0;
+                if (count == MAXCLOSECALLS)
+                {
+                    break;
+                }
+                count++;
+                memset(closemsg, 0, sizeof(closemsg));
+                strcpy(closemsg, CLOSE);
+                strcat(closemsg, POSTAMBLE);
+                if (sendto(shmSOCK_INFO->sockfd, closemsg, strlen(closemsg), 0, (struct sockaddr *)&(shmSM[i].addr), sizeof(shmSM[i].addr)) == -1)
+                {
+                    shmSOCK_INFO->err = errno;
+                }
+                if (sem_timedwait(&initSem, &ts) == -1)
+                {
+                    shmSOCK_INFO->err = errno;
+                }
+                else
+                {
+                    shmSOCK_INFO->err = 0;
+                    break;
+                }
             }
+            logger(LOGFILE, "%s:%d\tClosing socket", __FILE__, __LINE__);
+
+            /* Close the socket */
+            if (close(shmSM[i].UDPfd) == -1)
+            {
+                shmSOCK_INFO->err = errno;
+            }
+            
+            shmSM[i].isFree = 1;
+            shmSM[i].pid = 0;
+            memset(&shmSM[i].addr, 0, sizeof(shmSM[i].addr));
+            memset(shmSM[i].sbuff, 0, sizeof(shmSM[i].sbuff));
+            memset(shmSM[i].rbuff, 0, sizeof(shmSM[i].rbuff));
+            memset(&shmSM[i].swnd, 0, sizeof(shmSM[i].swnd));
+            memset(&shmSM[i].rwnd, 0, sizeof(shmSM[i].rwnd));
+            shmSM[i].swnd.size = 5;
+            shmSM[i].rwnd.size = 5;
+            shmSM[i].swnd.base = 0;
+            shmSM[i].rwnd.base = 0;
+            shmSM[i].currSeq = 0;
+            shmSM[i].currExpSeq = 0;
+            shmSM[i].lastAck = 15;
+            shmSM[i].lastPut = 0;
+            shmSM[i].lastGet = 0;
+            shmSM[i].toConsume = 0;
         }
 
         else
@@ -192,6 +292,7 @@ int main(int argc, char *argv[])
             logger(LOGFILE, "%s:%d\t%s", __FILE__, __LINE__, strerror(shmSOCK_INFO->err));
         }
 
+        /* Signal the completion of the request */
         if (sem_post(&(shmSOCK_INFO->sem2)) == -1)
         {
             perror("sem_post");
@@ -199,6 +300,7 @@ int main(int argc, char *argv[])
         }
     }
 
+    /* Join the R, S and G threads */
     if (pthread_join(R, NULL) != 0)
     {
         perror("pthread_join");
@@ -220,6 +322,7 @@ int main(int argc, char *argv[])
     }
     logger(LOGFILE, "%s:%d\tGthread joined", __FILE__, __LINE__);
 
+    /* Garbage collection */
     if (sem_destroy(&shmSOCK_INFO->sem1) == -1)
     {
         perror("sem_destroy");
@@ -259,6 +362,12 @@ int main(int argc, char *argv[])
     return 0;
 }
 
+
+/*
+ *  Function:   Rthread
+ *  -------------------
+ *  Description:    Function to handle the reception of messages (to be run as a thread)
+ */
 void *
 Rthread(void *arg)
 {
@@ -269,6 +378,13 @@ Rthread(void *arg)
     struct epoll_event ev, events[25];
     int nfds, epollfd;
 
+    char closeackmsg[MAXBUFLEN];
+    memset(closeackmsg, 0, sizeof(closeackmsg));
+    strcpy(closeackmsg, CLOSE);
+    strcat(closeackmsg, ACK);
+    strcat(closeackmsg, POSTAMBLE);
+
+    /* Create the epoll file descriptor */
     epollfd = epoll_create(25);
     if (epollfd == -1)
     {
@@ -292,6 +408,7 @@ Rthread(void *arg)
 
     while (1)
     {
+        /* Wait for the events */
         nfds = epoll_wait(epollfd, events, 25, T * 1000);
         if (nfds == -1)
         {
@@ -327,6 +444,7 @@ Rthread(void *arg)
                     memset(buf, 0, MAXBUFLEN);
                     memset(msg, 0, MAXBUFLEN);
 
+                    /* Receive the message */
                     while (1)
                     {
                         int numbytes = recvfrom(shm[j].UDPfd, buf, MAXBUFLEN - 1, 0, (struct sockaddr *)&src_addr, &addrlen);
@@ -343,9 +461,10 @@ Rthread(void *arg)
                         }
                     }
 
+                    /* Drop the message with probability P */
                     if (dropMessage(P) == 0)
                     {
-                        // Handle the MSG messages
+                        /* Handle the MSG message */
                         if (memcmp(msg, MSG, strlen(MSG)) == 0)
                         {
                             logger(LOGFILE, "%s:%d\tMessage %s received from %s:%d", __FILE__, __LINE__, msg, inet_ntoa(src_addr.sin_addr), ntohs(src_addr.sin_port));
@@ -359,7 +478,6 @@ Rthread(void *arg)
 
                             int k;
                             int pos = 0;
-
 
                             int count = 0;
                             for (k = shm[j].currExpSeq; ; k = (k + 1) % 16)
@@ -380,6 +498,7 @@ Rthread(void *arg)
                             {
                                 logger(LOGFILE, "%s:%d\tDuplicate message", __FILE__, __LINE__);
                             }
+
                             else
                             {
                                 logger(LOGFILE, "%s:%d\tMessage is put in receive buffer at position: %d", __FILE__, __LINE__, shm[j].rwnd.base + pos);
@@ -419,6 +538,8 @@ Rthread(void *arg)
                                     logger(LOGFILE, "%s:%d\tMessage recieved out of order", __FILE__, __LINE__);
                                 }
                             }
+
+                            /* Send the ACK message */
                             char ack[MAXBUFLEN];
                             memset(ack, 0, sizeof(ack));
                             strcpy(ack, ACK);
@@ -444,7 +565,7 @@ Rthread(void *arg)
                             logger(LOGFILE, "%s:%d\tACK sent for sequence number: %d", __FILE__, __LINE__, shm[j].lastAck);
                         }
                         
-                        // Handle the ACK messages
+                        /* Handle the ACK messages */
                         else if (memcmp(msg, ACK, strlen(ACK)) == 0)
                         {
                             logger(LOGFILE, "%s:%d\tACK %s received from %s:%d", __FILE__, __LINE__, msg, inet_ntoa(src_addr.sin_addr), ntohs(src_addr.sin_port));
@@ -494,6 +615,37 @@ Rthread(void *arg)
                             shm[j].swnd.size = atoi(data);
                         }
 
+                        /* Handle CLOSEACK message */
+
+                        else if (memcmp(msg, closeackmsg, strlen(closeackmsg)) == 0)
+                        {
+                            logger(LOGFILE, "%s:%d\tCLOSEACK received", __FILE__, __LINE__);
+                            if (sem_post(&initSem) == -1)
+                            {
+                                perror("sem_post");
+                            }
+                        }
+
+                        /* Handle CLOSE message */
+                        else if (memcmp(msg, CLOSE, strlen(CLOSE)) == 0)
+                        {
+                            logger(LOGFILE, "%s:%d\tClosing message received", __FILE__, __LINE__);
+                            
+                            /* Send the CLOSEACK message */
+                            if (sendto(shm[j].UDPfd, closeackmsg, strlen(closeackmsg), 0, (struct sockaddr *)&shm[j].addr, sizeof(shm[j].addr)) == -1)
+                            {
+                                perror("sendto");
+                            }
+                            logger(LOGFILE, "%s:%d\tCLOSEACK sent", __FILE__, __LINE__);
+
+                            /* Put in rbuff */
+                            memcpy(shm[j].rbuff[shm[j].rwnd.base], msg, strlen(msg));
+                            shm[j].rwnd.size--;
+                            shm[j].rwnd.base = (shm[j].rwnd.base + 1) % 5;
+                            shm[j].toConsume++;
+                            logger(LOGFILE, "%s:%d\tClose message put in receive buffer at position: %d", __FILE__, __LINE__, shm[j].rwnd.base);
+                        }
+
                         else
                         {
                             logger(LOGFILE, "%s:%d\tInvalid message type", __FILE__, __LINE__);
@@ -524,10 +676,12 @@ Rthread(void *arg)
             }
         }
 
+        /* Event timeout */
         else
         {
             for (i = 0; i < N; i++)
             {
+                /* If nospace is set and receive window is not empty, send the ACK message */
                 if (nospace[i] == 1)
                 {
                     logger(LOGFILE, "%s:%d\tNo space in receive window", __FILE__, __LINE__);
@@ -561,6 +715,7 @@ Rthread(void *arg)
                 }
             }
 
+            /* Re-register the sockets */
             for (i = 0; i < N; i++)
             {
                 if (shm[i].isFree == 0)
@@ -585,6 +740,12 @@ Rthread(void *arg)
     return NULL;
 }
 
+
+/*
+ *  Function:   Sthread
+ *  -------------------
+ *  Description:    Function to handle the transmission of messages (to be run as a thread)
+ */
 void *
 Sthread(void *arg)
 {
@@ -599,6 +760,8 @@ Sthread(void *arg)
             {
                 int timedout = 0;
                 int count = 0;
+
+                /* Check for timeout */
                 for (int j = shm[i].swnd.base; ; j = (j + 1) % 10)
                 {
                     if (count == shm[i].swnd.size)
@@ -606,6 +769,8 @@ Sthread(void *arg)
                         break;
                     }
                     count++;
+
+                    /* If the message has not been acknowledged and the timeout has occurred, resend all the messages in the send window */
                     if (shm[i].swnd.timestamp[j] != 0 && (time(NULL) - shm[i].swnd.timestamp[j]) > T)
                     {
                         int cnt = 0;
@@ -627,6 +792,8 @@ Sthread(void *arg)
                         break;
                     }
                 }
+
+                /* If no timeout has occurred, send the messages in the send window */
                 if (timedout == 0)
                 {
                     count = 0;
@@ -645,18 +812,28 @@ Sthread(void *arg)
                             {
                                 perror("sendto");
                             }
-                            logger(LOGFILE, "%s:%d\tMessage sent with sequence number: %d", __FILE__, __LINE__, shm[i].currSeq - 1);
+                            char sseqno[SEQ_LEN + 1];
+                            memset(sseqno, 0, sizeof(sseqno));
+                            memcpy(sseqno, shm[i].sbuff[j] + strlen(MSG), SEQ_LEN);
+                            logger(LOGFILE, "%s:%d\tMessage sent with sequence number: %d", __FILE__, __LINE__, atoi(sseqno));
                         }
                     }
                 }
             }
         }
+
         sleep(T / 2);
     }
 
     return NULL;
 }
 
+
+/*
+ *  Function:   Gthread
+ *  -------------------
+ *  Description:    Function to garbage collect the sockets (to be run as a thread)
+ */
 void *
 Gthread(void *arg)
 {
@@ -669,33 +846,19 @@ Gthread(void *arg)
         {
             if (shm[i].isFree == 0)
             {
+                /* Check if the process that created the socket is still alive */
                 if (kill(shm[i].pid, 0) == -1)
                 {
+                    /* If the process is not alive, close the socket */
                     if (errno == ESRCH)
                     {
-                        shm[i].isFree = 1;
-                        shm[i].pid = 0;
-                        close(shm[i].UDPfd);
-                        memset(&shm[i].addr, 0, sizeof(shm[i].addr));
-                        memset(shm[i].sbuff, 0, sizeof(shm[i].sbuff));
-                        memset(shm[i].rbuff, 0, sizeof(shm[i].rbuff));
-                        memset(&shm[i].swnd, 0, sizeof(shm[i].swnd));
-                        memset(&shm[i].rwnd, 0, sizeof(shm[i].rwnd));
-                        shm[i].swnd.size = 5;
-                        shm[i].rwnd.size = 5;
-                        shm[i].swnd.base = 0;
-                        shm[i].rwnd.base = 0;
-                        shm[i].currSeq = 0;
-                        shm[i].currExpSeq = 0;
-                        shm[i].lastAck = 15;
-                        shm[i].lastPut = 0;
-                        shm[i].lastGet = 0;
-
+                        m_close(shm[i].UDPfd);
                         logger(LOGFILE, "%s:%d\tSocket cleaned", __FILE__, __LINE__);
                     }
                 }
             }
         }
+        
         sleep(T);
     }
 
