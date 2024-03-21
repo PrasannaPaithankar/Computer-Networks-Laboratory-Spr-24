@@ -481,7 +481,6 @@ Rthread(void *arg)
                         logger(LOGFILE, "%s:%d\tInvalid socket", __FILE__, __LINE__);
                         continue;
                     }
-                    printf("jack currSeq: %d\n", shm[j].currSeq);
 
                     struct sockaddr_in src_addr;
                     socklen_t addrlen = sizeof(src_addr);
@@ -624,7 +623,7 @@ Rthread(void *arg)
                             memset(seqno, 0, sizeof(seqno));
                             memcpy(data, msg + strlen(ACK) + SEQ_LEN, strlen(msg) - strlen(ACK) - strlen(POSTAMBLE) - SEQ_LEN);
                             memcpy(seqno, msg + strlen(ACK), SEQ_LEN);
-                            printf("ack1 currSeq: %d\n", shm[j].currSeq);
+                            
                             int k, count = 0;
                             for (k = shm[j].swnd.base; ; k = (k + 1) % 10)
                             {
@@ -821,7 +820,7 @@ Sthread(void *arg)
                     if (shm[i].swnd.timestamp[j] != 0 && (time(NULL) - shm[i].swnd.timestamp[j]) > T)
                     {
                         int cnt = 0;
-                        for (int k = shm[i].swnd.base; ; k++)
+                        for (int k = shm[i].swnd.base; ; k = (k + 1) % 10)
                         {
                             if (cnt == shm[i].swnd.size)
                             {
