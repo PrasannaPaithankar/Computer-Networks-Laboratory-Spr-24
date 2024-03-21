@@ -42,7 +42,7 @@ int main(int argc, char *argv[])
 
     printf("Socket bound to port %d\n", atoi(argv[1]));
 
-    int fd = open("./test/file2.txt", O_RDONLY);
+    int fd = open("./test/g.html", O_RDONLY);
     if (fd == -1)
     {
         perror("open");

@@ -11,9 +11,12 @@
 
 #include "msocket.h"
 
-/* Benchmarking parameters */
+/* Benchmarking */
+float p;
+#ifdef TEST
 int totalMessages = 0;
 int totalTransmissions = 0;
+#endif
 
 /* Semaphore for closing the socket */
 sem_t initSem;
@@ -136,6 +139,36 @@ main(int argc, char *argv[])
         exit(1);
     }
 
+    p = P;
+    #ifdef TEST
+    printf("TEST enabled\n");
+
+    /* Initialize shared memory TEST_DATA */
+    int shmidTEST_DATA = shm_open(KEY_TEST_DATA, O_CREAT | O_RDWR, 0666);
+    if (shmidTEST_DATA == -1)
+    {
+        perror("shm_open");
+        exit(1);
+    }
+
+    /* Truncate the shared memory to the required size */
+    if (ftruncate(shmidTEST_DATA, sizeof(struct TEST_DATA)) == -1)
+    {
+        perror("ftruncate");
+        exit(1);
+    }
+
+    /* Map the shared memory to the process's address space */
+    struct TEST_DATA *shmTEST_DATA = mmap(0, sizeof(struct TEST_DATA), PROT_READ | PROT_WRITE, MAP_SHARED, shmidTEST_DATA, 0);
+    if (shmTEST_DATA == MAP_FAILED)
+    {
+        perror("mmap");
+        exit(1);
+    }
+    memset(shmTEST_DATA, 0, sizeof(struct TEST_DATA));
+    #endif
+
+
     /* Create the R, S and G threads */
     if (pthread_create(&R, NULL, Rthread, (void *)shmSM) != 0)
     {
@@ -191,7 +224,7 @@ main(int argc, char *argv[])
         }
 
         /* Handle bind socket request */
-        else if (shmSOCK_INFO->sockfd != 0 && shmSOCK_INFO->addr.sin_port != 0)
+        else if (shmSOCK_INFO->sockfd != 0 && shmSOCK_INFO->addr.sin_port != 0 && shmSOCK_INFO->err == 0)
         {
             logger(LOGFILE, "%s:%d\tBinding socket", __FILE__, __LINE__);
             if (bind(shmSOCK_INFO->sockfd, (struct sockaddr *)&(shmSOCK_INFO->addr), sizeof(shmSOCK_INFO->addr)) == -1)
@@ -206,7 +239,7 @@ main(int argc, char *argv[])
         }
 
         /* Handle close socket request */
-        else if (shmSOCK_INFO->sockfd != 0 && shmSOCK_INFO->addr.sin_port == 0 && shmSOCK_INFO->addr.sin_addr.s_addr == 0)
+        else if (shmSOCK_INFO->sockfd != 0 && shmSOCK_INFO->addr.sin_port == 0 && shmSOCK_INFO->addr.sin_addr.s_addr == 0 && shmSOCK_INFO->err == 0)
         {
             int i;
             for (i = 0; i < N; i++)
@@ -226,8 +259,8 @@ main(int argc, char *argv[])
                 shmSOCK_INFO->err = errno;
             }
             ts.tv_sec += (T/2);
-
             int count = 0;
+
             /* Send CLOSE message at most MAXCLOSECALLS times */
             char closemsg[MAXBUFLEN];
             while (1)
@@ -240,6 +273,7 @@ main(int argc, char *argv[])
                 memset(closemsg, 0, sizeof(closemsg));
                 strcpy(closemsg, CLOSE);
                 strcat(closemsg, POSTAMBLE);
+                shmSM[i].hasSentClose = 1;
                 if (sendto(shmSOCK_INFO->sockfd, closemsg, strlen(closemsg), 0, (struct sockaddr *)&(shmSM[i].addr), sizeof(shmSM[i].addr)) == -1)
                 {
                     shmSOCK_INFO->err = errno;
@@ -280,6 +314,17 @@ main(int argc, char *argv[])
             shmSM[i].lastGet = 0;
             shmSM[i].toConsume = 0;
         }
+
+        #ifdef TEST
+        /* Handle test data request */
+        else if (shmSOCK_INFO->sockfd != 0 && shmSOCK_INFO->err == -1)
+        {
+            logger(LOGFILE, "%s:%d\tSending test data", __FILE__, __LINE__);
+            p = shmTEST_DATA->p;
+            shmTEST_DATA->totalMessages = totalMessages;
+            shmTEST_DATA->totalTransmissions = totalTransmissions;
+        }
+        #endif
 
         else
         {
@@ -436,6 +481,7 @@ Rthread(void *arg)
                         logger(LOGFILE, "%s:%d\tInvalid socket", __FILE__, __LINE__);
                         continue;
                     }
+                    printf("jack currSeq: %d\n", shm[j].currSeq);
 
                     struct sockaddr_in src_addr;
                     socklen_t addrlen = sizeof(src_addr);
@@ -461,8 +507,8 @@ Rthread(void *arg)
                         }
                     }
 
-                    /* Drop the message with probability P */
-                    if (dropMessage(P) == 0)
+                    /* Drop the message with probability p */
+                    if (dropMessage(p) == 0)
                     {
                         /* Handle the MSG message */
                         if (memcmp(msg, MSG, strlen(MSG)) == 0)
@@ -544,6 +590,8 @@ Rthread(void *arg)
                             memset(ack, 0, sizeof(ack));
                             strcpy(ack, ACK);
                             char sseqno[SEQ_LEN + 1];
+                            memset(sseqno, 0, sizeof(sseqno));
+                            
                             if (shm[j].lastAck < 10)
                             {
                                 sprintf(sseqno, "0%d", shm[j].lastAck);
@@ -554,6 +602,7 @@ Rthread(void *arg)
                             }
                             strcat(ack, sseqno);
                             char ssize[SEQ_LEN + 1];
+                            memset(ssize, 0, sizeof(ssize));
                             sprintf(ssize, "%d", shm[j].rwnd.size);
                             strcat(ack, ssize);
                             strcat(ack, POSTAMBLE);
@@ -575,7 +624,7 @@ Rthread(void *arg)
                             memset(seqno, 0, sizeof(seqno));
                             memcpy(data, msg + strlen(ACK) + SEQ_LEN, strlen(msg) - strlen(ACK) - strlen(POSTAMBLE) - SEQ_LEN);
                             memcpy(seqno, msg + strlen(ACK), SEQ_LEN);
-
+                            printf("ack1 currSeq: %d\n", shm[j].currSeq);
                             int k, count = 0;
                             for (k = shm[j].swnd.base; ; k = (k + 1) % 10)
                             {
@@ -616,8 +665,7 @@ Rthread(void *arg)
                         }
 
                         /* Handle CLOSEACK message */
-
-                        else if (memcmp(msg, closeackmsg, strlen(closeackmsg)) == 0)
+                        else if (memcmp(msg, closeackmsg, strlen(closeackmsg)) == 0 && shm[j].hasSentClose == 1)
                         {
                             logger(LOGFILE, "%s:%d\tCLOSEACK received", __FILE__, __LINE__);
                             if (sem_post(&initSem) == -1)
@@ -654,7 +702,6 @@ Rthread(void *arg)
 
                     else
                     {
-                        printf("Message dropped\n");
                         logger(LOGFILE, "%s:%d\tMessage dropped", __FILE__, __LINE__);
                     }
 
@@ -789,6 +836,10 @@ Sthread(void *arg)
                         }
                         timedout = 1;
                         logger(LOGFILE, "%s:%d\tTimeout: Resending %d messages", __FILE__, __LINE__, shm[i].swnd.size);
+
+                        #ifdef TEST
+                        totalTransmissions += shm[i].swnd.size;
+                        #endif
                         break;
                     }
                 }
@@ -816,6 +867,11 @@ Sthread(void *arg)
                             memset(sseqno, 0, sizeof(sseqno));
                             memcpy(sseqno, shm[i].sbuff[j] + strlen(MSG), SEQ_LEN);
                             logger(LOGFILE, "%s:%d\tMessage sent with sequence number: %d", __FILE__, __LINE__, atoi(sseqno));
+
+                            #ifdef TEST
+                            totalMessages++;
+                            totalTransmissions++;
+                            #endif
                         }
                     }
                 }

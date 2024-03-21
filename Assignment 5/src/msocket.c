@@ -292,6 +292,7 @@ m_sendto (int sockfd, const void *buf, size_t len, int flags, const struct socka
                 if (shmSM[i].sbuff[shmSM[i].lastPut][0] == '\0')
                 {
                     char seq[SEQ_LEN + 1];
+                    memset(seq, 0, SEQ_LEN + 1);
                     if (shmSM[i].currSeq < 10)
                     {
                         sprintf(seq, "0%d", shmSM[i].currSeq);
@@ -302,7 +303,7 @@ m_sendto (int sockfd, const void *buf, size_t len, int flags, const struct socka
                     }
                     strcat(msg, MSG);
                     strcat(msg, seq);
-                    memcpy(msg + strlen(MSG) + SEQ_LEN, (char *)buf, len);
+                    memcpy(msg + strlen(MSG) + SEQ_LEN, buf, len);
                     strcat(msg, POSTAMBLE);
                     strcpy(shmSM[i].sbuff[shmSM[i].lastPut], msg);
                     
@@ -616,6 +617,87 @@ logger (char *fname, const char *format, ...)
 
     /* Close log file */
     fclose(log);
+
+    return 0;
+}
+
+
+int
+fetchTest(float p, int *arr)
+{
+    int sizeSOCK_INFO = sizeof(struct SOCK_INFO);
+    int sizeTEST_DATA = sizeof(struct TEST_DATA);
+
+    /* Open shared memory for SOCK_INFO */
+    int shmidSOCK_INFO = shm_open(KEY_SOCK_INFO, O_CREAT | O_RDWR, 0666);
+    if (shmidSOCK_INFO == -1)
+    {
+        perror("shm_open");
+        return -1;
+    }
+
+    /* Map shared memory for SOCK_INFO */
+    struct SOCK_INFO *shmSOCK_INFO = mmap(0, sizeSOCK_INFO, PROT_READ | PROT_WRITE, MAP_SHARED, shmidSOCK_INFO, 0);
+    if (shmSOCK_INFO == MAP_FAILED)
+    {
+        perror("mmap");
+        return -1;
+    }
+
+    /* Open shared memory for TEST_DATA */
+    int shmidTEST_DATA = shm_open(KEY_TEST_DATA, O_CREAT | O_RDWR, 0666);
+    if (shmidTEST_DATA == -1)
+    {
+        perror("shm_open");
+        return -1;
+    }
+
+    /* Map shared memory for TEST_DATA */
+    struct TEST_DATA *shmTEST_DATA = mmap(0, sizeTEST_DATA, PROT_READ | PROT_WRITE, MAP_SHARED, shmidTEST_DATA, 0);
+    if (shmTEST_DATA == MAP_FAILED)
+    {
+        perror("mmap");
+        return -1;
+    }
+
+    shmTEST_DATA->p = p;
+
+    shmSOCK_INFO->sockfd = -1;
+    shmSOCK_INFO->err = -1;
+
+
+    /* Signal the initmsocket daemon to bind the MTP socket */
+    if (sem_post(&shmSOCK_INFO->sem1) == -1)
+    {
+        perror("sem_post");
+        return -1;
+    }
+
+    /* Wait for the initmsocket daemon to finish binding the MTP socket */
+    if (sem_wait(&shmSOCK_INFO->sem2) == -1)
+    {
+        perror("sem_wait");
+        return -1;
+    }
+
+    arr[0] = shmTEST_DATA->totalMessages;
+    arr[1] = shmTEST_DATA->totalTransmissions;
+
+    /* Garbage collection */
+    if (munmap(shmSOCK_INFO, sizeSOCK_INFO) == -1)
+    {
+        perror("munmap");
+        return -1;
+    }
+
+    if (munmap(shmTEST_DATA, sizeTEST_DATA) == -1)
+    {
+        perror("munmap");
+        return -1;
+    }
+
+    close(shmidSOCK_INFO);
+    close(shmidTEST_DATA);
 
     return 0;
 }

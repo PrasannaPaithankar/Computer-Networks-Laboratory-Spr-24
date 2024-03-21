@@ -50,6 +50,7 @@
 
     #define KEY_SM "pipiSM"
     #define KEY_SOCK_INFO "pipiSOCK_INFO"
+    #define KEY_TEST_DATA "pipiTEST_DATA"
 
 #endif
 
@@ -77,16 +78,23 @@ struct SM
     int                 lastPut;            // Last index where a message was put in the send buffer
     int                 lastGet;            // Last index where a message was got from the receive buffer
     int                 toConsume;          // No of messages to consume
+    int                 hasSentClose;       // 0: not sent, 1: sent
 };
 
 struct SOCK_INFO
 {
     sem_t               sem1;       // Semaphore 1
     sem_t               sem2;       // Semaphore 2
-    sem_t               sem3;       // Semaphore 3
     int                 sockfd;     // Socket file descriptor
     struct sockaddr_in  addr;       // Address of this machine
     int                 err;        // Error code
+};
+
+struct TEST_DATA
+{
+    float               p;                  // Probability of dropping a message
+    int                 totalMessages;      // Total messages
+    int                 totalTransmissions; // Total transmissions
 };
 
 
@@ -110,3 +118,6 @@ dropMessage(float p);
 
 int
 logger(char *fname, const char *format, ...);
+
+int
+fetchTest(float p, int *arr);

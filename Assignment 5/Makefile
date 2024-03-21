@@ -7,9 +7,10 @@
 CC = gcc
 CFLAGS = -Wall -Wextra -g -pedantic -O2
 LDFLAGS = -lrt -pthread -lmsocket
+DFLAGS = -DTEST
 
 LIBRARY = libmsocket.a
-BINARIES = initmsocket user1 user2
+BINARIES = initmsocket user1 user2 tester
 
 SRC_DIR = src
 OBJ_DIR = obj
@@ -22,20 +23,19 @@ LIBOBJ = $(OBJ_DIR)/msocket.o
 
 .PHONY: all dir clean tar run runkde rungnome
 
-all: dir $(LIBRARY) $(BINARIES)
+all: $(LIBRARY) $(BINARIES)
 
 $(LIBRARY): $(LIBOBJ)
 	ar rcs $@ $^
 
-$(BINARIES): %: $(OBJ_DIR)/%.o $(LIBRARY)
+$(BINARIES): %: $(OBJ_DIR)/%.o $(LIBRARY) dir
 	$(CC) $(CFLAGS) $< -o $(BIN_DIR)/$@ -L. $(LDFLAGS)
 
-$(OBJ_DIR)/%.o: $(SRC_DIR)/%.c
-	$(CC) $(CFLAGS) -c $< -o $@
+$(OBJ_DIR)/%.o: $(SRC_DIR)/%.c dir
+	$(CC) $(CFLAGS) -c $< -o $@ $(DFLAGS)
 
 dir:
 	mkdir -p $(OBJ_DIR) $(BIN_DIR) $(LOG_DIR)
-	-touch $(LOG_DIR)/log.txt
 
 tar:
 	tar -czvf assignment5.tar.gz $(SRC_DIR) Makefile

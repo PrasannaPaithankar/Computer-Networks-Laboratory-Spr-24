@@ -42,7 +42,7 @@ int main(int argc, char *argv[])
 
     printf("Socket bound to port %d\n", atoi(argv[1]));
 
-    FILE *fp = fopen("./test/file3.txt", "w");
+    FILE *fp = fopen("./test/rec.html", "w");
     if (fp == NULL)
     {
         perror("fopen");
@@ -77,9 +77,10 @@ int main(int argc, char *argv[])
             break;
         }
         
-        printf("%d\n", count++);
-        fflush(stdout);
-        fprintf(fp, "%s", buf);
+        // printf("%d\n", count++);
+        // fflush(stdout);
+        // write the image
+        fwrite(buf, 1, n, fp);
         fflush(fp);
 
         memset(buf, 0, MAXBUFLEN);
