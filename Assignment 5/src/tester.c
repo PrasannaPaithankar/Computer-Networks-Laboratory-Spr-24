@@ -17,7 +17,7 @@ int main(int argc, char *argv[])
     signal(SIGINT, signalHandler);
 
     // Open file argv[1] for reading
-    file = fopen(argv[1], "a");
+    file = fopen(argv[1], "w");
     if (file == NULL)
     {
         printf("Error: File not found\n");

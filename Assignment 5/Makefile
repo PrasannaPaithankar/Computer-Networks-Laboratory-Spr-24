@@ -5,9 +5,9 @@
 # File:       Makefile
 
 CC = gcc
-CFLAGS = -Wall -Wextra -g -pedantic -O2
+CFLAGS = -Wall -Wextra -g -pedantic
 LDFLAGS = -lrt -pthread -lmsocket
-DFLAGS = -DTEST
+DFLAGS = -DTEST -DDEEPLOG
 
 LIBRARY = libmsocket.a
 BINARIES = initmsocket user1 user2 tester

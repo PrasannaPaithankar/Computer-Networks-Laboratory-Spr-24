@@ -90,6 +90,7 @@ main(int argc, char *argv[])
         shmSM[i].lastPut = 0;
         shmSM[i].lastGet = 0;
         shmSM[i].toConsume = 0;
+        shmSM[i].hasSentClose = 0;
     }
     printf("SM initialized\n");
     logger(LOGFILE, "SM initialized");
@@ -253,6 +254,15 @@ main(int argc, char *argv[])
                 }
             }
 
+            /* Check if the send window is empty, if not, wait for it to get empty */
+            shmSM[i].hasSentClose = 1;
+            logger(LOGFILE, "%s:%d\tWaiting for send window to get empty", __FILE__, __LINE__);
+
+            if (sem_wait(&initSem) == -1)
+            {
+                shmSOCK_INFO->err = errno;
+            }
+
             struct timespec ts;
             if (clock_gettime(CLOCK_REALTIME, &ts) == -1)
             {
@@ -262,6 +272,7 @@ main(int argc, char *argv[])
             int count = 0;
 
             /* Send CLOSE message at most MAXCLOSECALLS times */
+            logger(LOGFILE, "%s:%d\tSending CLOSE message", __FILE__, __LINE__);
             char closemsg[MAXBUFLEN];
             while (1)
             {
@@ -273,7 +284,7 @@ main(int argc, char *argv[])
                 memset(closemsg, 0, sizeof(closemsg));
                 strcpy(closemsg, CLOSE);
                 strcat(closemsg, POSTAMBLE);
-                shmSM[i].hasSentClose = 1;
+                shmSM[i].hasSentClose = 2;
                 if (sendto(shmSOCK_INFO->sockfd, closemsg, strlen(closemsg), 0, (struct sockaddr *)&(shmSM[i].addr), sizeof(shmSM[i].addr)) == -1)
                 {
                     shmSOCK_INFO->err = errno;
@@ -313,6 +324,7 @@ main(int argc, char *argv[])
             shmSM[i].lastPut = 0;
             shmSM[i].lastGet = 0;
             shmSM[i].toConsume = 0;
+            shmSM[i].hasSentClose = 0;
         }
 
         #ifdef TEST
@@ -485,9 +497,9 @@ Rthread(void *arg)
                     struct sockaddr_in src_addr;
                     socklen_t addrlen = sizeof(src_addr);
                     char buf[MAXBUFLEN];
-                    char msg[MAXBUFLEN];
+                    char msg[2 * MAXBUFLEN];
                     memset(buf, 0, MAXBUFLEN);
-                    memset(msg, 0, MAXBUFLEN);
+                    memset(msg, 0, 2 * MAXBUFLEN);
 
                     /* Receive the message */
                     while (1)
@@ -502,6 +514,9 @@ Rthread(void *arg)
                         memset(buf, 0, MAXBUFLEN);
                         if (strstr(msg, POSTAMBLE) != NULL)
                         {
+                            char *p = strstr(msg, POSTAMBLE);
+                            p += strlen(POSTAMBLE);
+                            memset(p, 0, 2 * MAXBUFLEN - (p - msg));
                             break;
                         }
                     }
@@ -512,8 +527,10 @@ Rthread(void *arg)
                         /* Handle the MSG message */
                         if (memcmp(msg, MSG, strlen(MSG)) == 0)
                         {
+                            #ifdef DEEPLOG
                             logger(LOGFILE, "%s:%d\tMessage %s received from %s:%d", __FILE__, __LINE__, msg, inet_ntoa(src_addr.sin_addr), ntohs(src_addr.sin_port));
-                            
+                            #endif
+
                             char data[MAXBUFLEN];
                             char seqno[SEQ_LEN + 1];
                             memset(data, 0, sizeof(data));
@@ -541,12 +558,17 @@ Rthread(void *arg)
 
                             if (k == (shm[j].currExpSeq + shm[j].rwnd.size) % 16)
                             {
+                                #ifdef DEEPLOG
                                 logger(LOGFILE, "%s:%d\tDuplicate message", __FILE__, __LINE__);
+                                #endif
                             }
 
                             else
                             {
+                                #ifdef DEEPLOG
                                 logger(LOGFILE, "%s:%d\tMessage is put in receive buffer at position: %d", __FILE__, __LINE__, shm[j].rwnd.base + pos);
+                                #endif
+
                                 memcpy(shm[j].rbuff[shm[j].rwnd.base + pos], msg, strlen(msg));
                                 if (pos == 0)
                                 {
@@ -580,7 +602,9 @@ Rthread(void *arg)
                                 }
                                 else
                                 {
+                                    #ifdef DEEPLOG
                                     logger(LOGFILE, "%s:%d\tMessage recieved out of order", __FILE__, __LINE__);
+                                    #endif
                                 }
                             }
 
@@ -610,13 +634,18 @@ Rthread(void *arg)
                                 perror("sendto");
                             }
 
+                            #ifdef DEEPLOG
                             logger(LOGFILE, "%s:%d\tACK sent for sequence number: %d", __FILE__, __LINE__, shm[j].lastAck);
+                            #endif
                         }
                         
                         /* Handle the ACK messages */
                         else if (memcmp(msg, ACK, strlen(ACK)) == 0)
                         {
+                            #ifdef DEEPLOG
                             logger(LOGFILE, "%s:%d\tACK %s received from %s:%d", __FILE__, __LINE__, msg, inet_ntoa(src_addr.sin_addr), ntohs(src_addr.sin_port));
+                            #endif
+
                             char data[MAXBUFLEN];
                             char seqno[SEQ_LEN + 1];
                             memset(data, 0, sizeof(data));
@@ -643,7 +672,9 @@ Rthread(void *arg)
 
                             if (k == (shm[j].swnd.base + shm[j].swnd.size) % 10)
                             {
+                                #ifdef DEEPLOG
                                 logger(LOGFILE, "%s:%d\tDuplicate ACK", __FILE__, __LINE__);
+                                #endif
                             }
                             else
                             {
@@ -664,7 +695,7 @@ Rthread(void *arg)
                         }
 
                         /* Handle CLOSEACK message */
-                        else if (memcmp(msg, closeackmsg, strlen(closeackmsg)) == 0 && shm[j].hasSentClose == 1)
+                        else if (memcmp(msg, closeackmsg, strlen(closeackmsg)) == 0 && shm[j].hasSentClose == 2)
                         {
                             logger(LOGFILE, "%s:%d\tCLOSEACK received", __FILE__, __LINE__);
                             if (sem_post(&initSem) == -1)
@@ -701,7 +732,9 @@ Rthread(void *arg)
 
                     else
                     {
+                        #ifdef DEEPLOG
                         logger(LOGFILE, "%s:%d\tMessage dropped", __FILE__, __LINE__);
+                        #endif
                     }
 
                     if (err != 0)
@@ -730,7 +763,10 @@ Rthread(void *arg)
                 /* If nospace is set and receive window is not empty, send the ACK message */
                 if (nospace[i] == 1)
                 {
+                    #ifdef DEEPLOG
                     logger(LOGFILE, "%s:%d\tNo space in receive window", __FILE__, __LINE__);
+                    #endif
+
                     if (shm[i].rwnd.size != 0)
                     {
                         char ack[MAXBUFLEN];
@@ -754,7 +790,9 @@ Rthread(void *arg)
                         {
                             perror("sendto");
                         }
+                        #ifdef DEEPLOG
                         logger(LOGFILE, "%s:%d\tACK sent for sequence number: %d", __FILE__, __LINE__, shm[i].lastAck);
+                        #endif
 
                         nospace[i] = 0;
                     }
@@ -834,7 +872,10 @@ Sthread(void *arg)
                             }
                         }
                         timedout = 1;
+
+                        #ifdef DEEPLOG
                         logger(LOGFILE, "%s:%d\tTimeout: Resending %d messages", __FILE__, __LINE__, shm[i].swnd.size);
+                        #endif
 
                         #ifdef TEST
                         totalTransmissions += shm[i].swnd.size;
@@ -865,12 +906,41 @@ Sthread(void *arg)
                             char sseqno[SEQ_LEN + 1];
                             memset(sseqno, 0, sizeof(sseqno));
                             memcpy(sseqno, shm[i].sbuff[j] + strlen(MSG), SEQ_LEN);
+
+                            #ifdef DEEPLOG
                             logger(LOGFILE, "%s:%d\tMessage sent with sequence number: %d", __FILE__, __LINE__, atoi(sseqno));
+                            #endif
 
                             #ifdef TEST
                             totalMessages++;
                             totalTransmissions++;
                             #endif
+                        }
+                    }
+                }
+
+                if (shm[i].hasSentClose == 1)
+                {
+                    count = 0;
+                    int flag = 0;
+                    for (int j = shm[i].swnd.base; ; j = (j + 1) % 10)
+                    {
+                        if (shm[i].sbuff[j][0] != '\0')
+                        {
+                            flag = 1;
+                        }
+                        count++;
+                        if (count = 10)
+                        {
+                            break;
+                        }
+                    }
+
+                    if (flag == 0)
+                    {
+                        if (sem_post(&initSem) == -1)
+                        {
+                            perror("sem_post");
                         }
                     }
                 }

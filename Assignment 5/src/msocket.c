@@ -347,11 +347,6 @@ m_sendto (int sockfd, const void *buf, size_t len, int flags, const struct socka
 
     close(shmidSM);
 
-    if (retval != 0)
-    {
-        // logger(LOGFILE, "%s:%d\tError sending message: %s", __FILE__, __LINE__, strerror(errno));
-    }
-
     return retval;
 }
 
@@ -594,11 +589,6 @@ dropMessage(float p)
 int
 logger (char *fname, const char *format, ...)
 {
-    /* Get current timestamp */
-    time_t now = time(NULL);
-    char timestamp[40];
-    strftime(timestamp, sizeof(timestamp), "%Y-%m-%d %H:%M:%S", localtime(&now));
-
     /* Open log file, create if not exists */
     FILE *log = fopen(fname, "a");
     if (log == NULL)
@@ -610,10 +600,9 @@ logger (char *fname, const char *format, ...)
     /* Log message */
     va_list args;
     va_start(args, format);
-    fprintf(log, "%s ", timestamp);
     vfprintf(log, format, args);
-    fprintf(log, "\n");
     va_end(args);
+    fprintf(log, "\n");
 
     /* Close log file */
     fclose(log);

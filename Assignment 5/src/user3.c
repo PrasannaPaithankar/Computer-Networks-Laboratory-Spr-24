@@ -43,7 +43,7 @@ int main(int argc, char *argv[])
     printf("Socket bound to port %d\n", atoi(argv[1]));
 
     // FILE *fp = fopen("./test/fileimg.jpg", "w");
-    FILE *fp = fopen("./test/rec.html", "w");
+    FILE *fp = fopen("./test/rec2.html", "w");
     if (fp == NULL)
     {
         perror("fopen");

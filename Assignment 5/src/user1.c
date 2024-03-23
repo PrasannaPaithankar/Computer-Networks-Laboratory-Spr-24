@@ -42,6 +42,7 @@ int main(int argc, char *argv[])
 
     printf("Socket bound to port %d\n", atoi(argv[1]));
 
+    // int fd = open("./test/selfpotrait.jpg", O_RDONLY);
     int fd = open("./test/g.html", O_RDONLY);
     if (fd == -1)
     {
@@ -49,10 +50,18 @@ int main(int argc, char *argv[])
         return errno;
     }
 
+    // printf size of the file
+    struct stat st;
+    fstat(fd, &st);
+    printf("Size of the file: %ld\n", st.st_size);
+
+    // FILE *fp = fopen("./test/reply.jpg", "w");
+
     char buf[MAXBUFLEN - 10];
     int n;
     while ((n = read(fd, buf, MAXBUFLEN - 10)) > 0)
     {
+        // fwrite(buf, 1, n, fp);
         while (m_sendto(M1, buf, n, 0, (struct sockaddr *)&dest_addr, sizeof(dest_addr)) == -1)
         {
             if (errno == ENOBUFS)
@@ -68,9 +77,10 @@ int main(int argc, char *argv[])
         memset(buf, 0, MAXBUFLEN - 10);   
     }
 
-    sleep(20);
+    // sleep(20);
 
     close(fd);
+    // fclose(fp);
     m_close(M1);    
 
     printf("File sent\n");
