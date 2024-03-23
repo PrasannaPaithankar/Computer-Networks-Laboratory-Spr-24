@@ -16,29 +16,46 @@ SRC_DIR = src
 OBJ_DIR = obj
 BIN_DIR = bin
 LOG_DIR = logs
+LIB_DIR = lib
+INC_DIR = include
+LIB_OBJ_DIR = obj/lib
 
 SRCS = $(wildcard $(SRC_DIR)/*.c)
 OBJS = $(patsubst $(SRC_DIR)/%.c,$(OBJ_DIR)/%.o,$(SRCS))
-LIBOBJ = $(OBJ_DIR)/msocket.o
+LIBSRC = $(wildcard $(INC_DIR)/*.c)
+LIBOBJ = $(patsubst $(INC_DIR)/%.c,$(LIB_OBJ_DIR)/%.o,$(LIBSRC))
 
 .PHONY: all dir clean tar run runkde rungnome
-
+	
 all: $(LIBRARY) $(BINARIES)
 
 $(LIBRARY): $(LIBOBJ)
-	ar rcs $@ $^
+	make dir && ar rcs $(LIB_DIR)/$@ $^
 
-$(BINARIES): %: $(OBJ_DIR)/%.o $(LIBRARY) dir
-	$(CC) $(CFLAGS) $< -o $(BIN_DIR)/$@ -L. $(LDFLAGS)
+$(BINARIES): %: $(OBJ_DIR)/%.o $(LIBRARY)
+	make dir && $(CC) $(CFLAGS) $< -o $(BIN_DIR)/$@ -L$(LIB_DIR) $(LDFLAGS)
 
-$(OBJ_DIR)/%.o: $(SRC_DIR)/%.c dir
-	$(CC) $(CFLAGS) -c $< -o $@ $(DFLAGS)
+$(OBJ_DIR)/%.o: $(SRC_DIR)/%.c 
+	make dir && $(CC) $(CFLAGS) -c $< -o $@ $(DFLAGS)
+
+$(LIB_OBJ_DIR)/%.o: $(INC_DIR)/%.c
+	make dir && $(CC) $(CFLAGS) -c $< -o $@ $(DFLAGS)
+
+install: all
+	cp $(LIB_DIR)/$(LIBRARY) /usr/local/lib
+	cp $(INC_DIR)/*.h /usr/local/include
+	ldconfig
+
+uninstall:
+	rm -f /usr/local/lib/$(LIBRARY)
+	rm -f /usr/local/include/msocket.h
+	ldconfig
 
 dir:
-	mkdir -p $(OBJ_DIR) $(BIN_DIR) $(LOG_DIR)
+	mkdir -p $(OBJ_DIR) $(BIN_DIR) $(LOG_DIR) $(LIB_DIR) $(INC_DIR) $(LIB_OBJ_DIR)
 
 tar:
-	tar -czvf assignment5.tar.gz $(SRC_DIR) Makefile
+	tar -czvf assignment5.tar.gz $(SRC_DIR) $(INC_DIR) Makefile documentation.txt
 
 run:
 	@./$(BIN_DIR)/initmsocket &
@@ -59,4 +76,4 @@ rungnome:
 	@echo "Running the programs"
 	
 clean:
-	rm -rf $(LIBRARY) $(BINARIES) $(OBJS) $(LIBOBJ) $(BIN_DIR)/* $(OBJ_DIR)/* assignment5.tar.gz
+	rm -rf $(LIBRARY) $(BINARIES) $(OBJS) $(LIBOBJ) $(LIB_DIR) $(OBJ_DIR) $(BIN_DIR) assignment5.tar.gz

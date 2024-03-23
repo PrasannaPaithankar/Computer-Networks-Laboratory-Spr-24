@@ -9,7 +9,8 @@
  *  Run:        ./initmsocket
  */
 
-#include "msocket.h"
+// #include "../include/msocket.h"
+#include <msocket.h>
 
 /* Benchmarking */
 float p;
@@ -19,7 +20,8 @@ int totalTransmissions = 0;
 #endif
 
 /* Semaphore for closing the socket */
-sem_t initSem;
+sem_t initSem, cSem;
+int csockfd = 0;
 
 /* Function prototypes */
 void *
@@ -31,6 +33,9 @@ Sthread(void *arg);
 void *
 Gthread(void *arg);
 
+void *
+Cthread(void *arg);
+
 
 /*
  *  Function:   main
@@ -41,7 +46,7 @@ Gthread(void *arg);
 int
 main(int argc, char *argv[])
 {
-    pthread_t R, S, G;
+    pthread_t R, S, G, C;
 
     int sizeSM = N * sizeof(struct SM);
     int sizeSOCK_INFO = sizeof(struct SOCK_INFO);
@@ -91,6 +96,7 @@ main(int argc, char *argv[])
         shmSM[i].lastGet = 0;
         shmSM[i].toConsume = 0;
         shmSM[i].hasSentClose = 0;
+        shmSM[i].triesPostWait = 0;
     }
     printf("SM initialized\n");
     logger(LOGFILE, "SM initialized");
@@ -140,6 +146,12 @@ main(int argc, char *argv[])
         exit(1);
     }
 
+    if (sem_init(&cSem, 1, 0) == -1)
+    {
+        perror("sem_init");
+        exit(1);
+    }
+
     p = P;
     #ifdef TEST
     printf("TEST enabled\n");
@@ -170,7 +182,7 @@ main(int argc, char *argv[])
     #endif
 
 
-    /* Create the R, S and G threads */
+    /* Create the R, S, G and C threads */
     if (pthread_create(&R, NULL, Rthread, (void *)shmSM) != 0)
     {
         perror("pthread_create");
@@ -194,6 +206,14 @@ main(int argc, char *argv[])
     }
     printf("Gthread created\n");
     logger(LOGFILE, "%s:%d\tGthread created", __FILE__, __LINE__);
+
+    if (pthread_create(&C, NULL, Cthread, (void *)shmSM) != 0)
+    {
+        perror("pthread_create");
+        exit(1);
+    }
+    printf("Cthread created\n");
+    logger(LOGFILE, "%s:%d\tCthread created", __FILE__, __LINE__);
 
     /* Handle the socket creation, binding and closing requests */
     while (1)
@@ -242,89 +262,11 @@ main(int argc, char *argv[])
         /* Handle close socket request */
         else if (shmSOCK_INFO->sockfd != 0 && shmSOCK_INFO->addr.sin_port == 0 && shmSOCK_INFO->addr.sin_addr.s_addr == 0 && shmSOCK_INFO->err == 0)
         {
-            int i;
-            for (i = 0; i < N; i++)
+            csockfd = shmSOCK_INFO->sockfd;
+            if (sem_post(&cSem) == -1)
             {
-                if (shmSM[i].isFree == 0)
-                {
-                    if (shmSM[i].UDPfd == shmSOCK_INFO->sockfd)
-                    {
-                        break;
-                    }
-                }
+                perror("sem_post");
             }
-
-            /* Check if the send window is empty, if not, wait for it to get empty */
-            shmSM[i].hasSentClose = 1;
-            logger(LOGFILE, "%s:%d\tWaiting for send window to get empty", __FILE__, __LINE__);
-
-            if (sem_wait(&initSem) == -1)
-            {
-                shmSOCK_INFO->err = errno;
-            }
-
-            struct timespec ts;
-            if (clock_gettime(CLOCK_REALTIME, &ts) == -1)
-            {
-                shmSOCK_INFO->err = errno;
-            }
-            ts.tv_sec += (T/2);
-            int count = 0;
-
-            /* Send CLOSE message at most MAXCLOSECALLS times */
-            logger(LOGFILE, "%s:%d\tSending CLOSE message", __FILE__, __LINE__);
-            char closemsg[MAXBUFLEN];
-            while (1)
-            {
-                if (count == MAXCLOSECALLS)
-                {
-                    break;
-                }
-                count++;
-                memset(closemsg, 0, sizeof(closemsg));
-                strcpy(closemsg, CLOSE);
-                strcat(closemsg, POSTAMBLE);
-                shmSM[i].hasSentClose = 2;
-                if (sendto(shmSOCK_INFO->sockfd, closemsg, strlen(closemsg), 0, (struct sockaddr *)&(shmSM[i].addr), sizeof(shmSM[i].addr)) == -1)
-                {
-                    shmSOCK_INFO->err = errno;
-                }
-                if (sem_timedwait(&initSem, &ts) == -1)
-                {
-                    shmSOCK_INFO->err = errno;
-                }
-                else
-                {
-                    shmSOCK_INFO->err = 0;
-                    break;
-                }
-            }
-            logger(LOGFILE, "%s:%d\tClosing socket", __FILE__, __LINE__);
-
-            /* Close the socket */
-            if (close(shmSM[i].UDPfd) == -1)
-            {
-                shmSOCK_INFO->err = errno;
-            }
-            
-            shmSM[i].isFree = 1;
-            shmSM[i].pid = 0;
-            memset(&shmSM[i].addr, 0, sizeof(shmSM[i].addr));
-            memset(shmSM[i].sbuff, 0, sizeof(shmSM[i].sbuff));
-            memset(shmSM[i].rbuff, 0, sizeof(shmSM[i].rbuff));
-            memset(&shmSM[i].swnd, 0, sizeof(shmSM[i].swnd));
-            memset(&shmSM[i].rwnd, 0, sizeof(shmSM[i].rwnd));
-            shmSM[i].swnd.size = 5;
-            shmSM[i].rwnd.size = 5;
-            shmSM[i].swnd.base = 0;
-            shmSM[i].rwnd.base = 0;
-            shmSM[i].currSeq = 0;
-            shmSM[i].currExpSeq = 0;
-            shmSM[i].lastAck = 15;
-            shmSM[i].lastPut = 0;
-            shmSM[i].lastGet = 0;
-            shmSM[i].toConsume = 0;
-            shmSM[i].hasSentClose = 0;
         }
 
         #ifdef TEST
@@ -335,6 +277,7 @@ main(int argc, char *argv[])
             p = shmTEST_DATA->p;
             shmTEST_DATA->totalMessages = totalMessages;
             shmTEST_DATA->totalTransmissions = totalTransmissions;
+            shmSOCK_INFO->err = 0;
         }
         #endif
 
@@ -357,7 +300,7 @@ main(int argc, char *argv[])
         }
     }
 
-    /* Join the R, S and G threads */
+    /* Join the R, S, G and C threads */
     if (pthread_join(R, NULL) != 0)
     {
         perror("pthread_join");
@@ -378,6 +321,13 @@ main(int argc, char *argv[])
         exit(1);
     }
     logger(LOGFILE, "%s:%d\tGthread joined", __FILE__, __LINE__);
+
+    if (pthread_join(C, NULL) != 0)
+    {
+        perror("pthread_join");
+        exit(1);
+    }
+    logger(LOGFILE, "%s:%d\tCthread joined", __FILE__, __LINE__);
 
     /* Garbage collection */
     if (sem_destroy(&shmSOCK_INFO->sem1) == -1)
@@ -525,7 +475,7 @@ Rthread(void *arg)
                     if (dropMessage(p) == 0)
                     {
                         /* Handle the MSG message */
-                        if (memcmp(msg, MSG, strlen(MSG)) == 0)
+                        if (memcmp(msg, MSG, strlen(MSG)) == 0 && nospace[j] == 0)
                         {
                             #ifdef DEEPLOG
                             logger(LOGFILE, "%s:%d\tMessage %s received from %s:%d", __FILE__, __LINE__, msg, inet_ntoa(src_addr.sin_addr), ntohs(src_addr.sin_port));
@@ -585,6 +535,12 @@ Rthread(void *arg)
                                         {
                                             shm[j].lastAck = (shm[j].lastAck + 1) % 16;
                                             lastposack++;
+                                            shm[j].rwnd.size--;
+                                            if (shm[j].rwnd.size == 0)
+                                            {
+                                                nospace[j] = 1;
+                                                break;
+                                            }
                                         }
                                         else
                                         {
@@ -592,13 +548,8 @@ Rthread(void *arg)
                                         }
                                     }
                                     shm[j].rwnd.base = (shm[j].rwnd.base + lastposack) % 5;
-                                    shm[j].rwnd.size -= lastposack;
                                     shm[j].toConsume += lastposack;
                                     shm[j].currExpSeq = (shm[j].currExpSeq + lastposack) % 16;
-                                    if (shm[j].rwnd.size == 0)
-                                    {
-                                        nospace[j] = 1;
-                                    }
                                 }
                                 else
                                 {
@@ -908,7 +859,7 @@ Sthread(void *arg)
                             memcpy(sseqno, shm[i].sbuff[j] + strlen(MSG), SEQ_LEN);
 
                             #ifdef DEEPLOG
-                            logger(LOGFILE, "%s:%d\tMessage sent with sequence number: %d", __FILE__, __LINE__, atoi(sseqno));
+                            logger(LOGFILE, "%s:%d\tMessage sent with sequence number: %d to %s:%d", __FILE__, __LINE__, atoi(sseqno), inet_ntoa(shm[i].addr.sin_addr), ntohs(shm[i].addr.sin_port));
                             #endif
 
                             #ifdef TEST
@@ -921,6 +872,7 @@ Sthread(void *arg)
 
                 if (shm[i].hasSentClose == 1)
                 {
+
                     count = 0;
                     int flag = 0;
                     for (int j = shm[i].swnd.base; ; j = (j + 1) % 10)
@@ -930,11 +882,17 @@ Sthread(void *arg)
                             flag = 1;
                         }
                         count++;
-                        if (count = 10)
+                        if (count == 10)
                         {
                             break;
                         }
                     }
+
+                    if (shm[i].triesPostWait == 10)
+                    {
+                        flag = 0;
+                    }
+                    shm[i].triesPostWait++;
 
                     if (flag == 0)
                     {
@@ -985,6 +943,105 @@ Gthread(void *arg)
         }
         
         sleep(T);
+    }
+
+    return NULL;
+}
+
+
+/*
+ *  Function:   Cthread
+ *  -------------------
+ *  Description:    Function to close the socket (to be run as a thread)
+ */
+void *
+Cthread(void *arg)
+{
+    struct SM *shmSM = (struct SM *)arg;
+
+    while (1)
+    {
+        if (sem_wait(&cSem) == -1)
+        {
+            perror("sem_wait");
+        }
+
+        int i;
+        for (i = 0; i < N; i++)
+        {
+            if (shmSM[i].isFree == 0)
+            {
+                if (shmSM[i].UDPfd == csockfd)
+                {
+                    csockfd = 0;
+                    break;
+                }
+            }
+        }
+        
+        if (i == N)
+        {
+            continue;
+        }
+
+        /* Check if the send window is empty, if not, wait for it to get empty */
+        shmSM[i].hasSentClose = 1;
+        logger(LOGFILE, "%s:%d\tWaiting for send window to get empty", __FILE__, __LINE__);
+
+        sem_wait(&initSem);
+
+        struct timespec ts;
+        clock_gettime(CLOCK_REALTIME, &ts);
+        ts.tv_sec += (T/2);
+        int count = 0;
+
+        /* Send CLOSE message at most MAXCLOSECALLS times */
+        logger(LOGFILE, "%s:%d\tSending CLOSE message", __FILE__, __LINE__);
+        char closemsg[MAXBUFLEN];
+        while (1)
+        {
+            if (count == MAXCLOSECALLS)
+            {
+                break;
+            }
+            count++;
+            memset(closemsg, 0, sizeof(closemsg));
+            strcpy(closemsg, CLOSE);
+            strcat(closemsg, POSTAMBLE);
+            shmSM[i].hasSentClose = 2;
+            sendto(csockfd, closemsg, strlen(closemsg), 0, (struct sockaddr *)&(shmSM[i].addr), sizeof(shmSM[i].addr));
+            if (sem_timedwait(&initSem, &ts) == -1)
+            {
+            }
+            else
+            {
+                break;
+            }
+        }
+        logger(LOGFILE, "%s:%d\tClosing socket", __FILE__, __LINE__);
+
+        /* Close the socket */
+        close(shmSM[i].UDPfd);
+        
+        shmSM[i].isFree = 1;
+        shmSM[i].pid = 0;
+        memset(&shmSM[i].addr, 0, sizeof(shmSM[i].addr));
+        memset(shmSM[i].sbuff, 0, sizeof(shmSM[i].sbuff));
+        memset(shmSM[i].rbuff, 0, sizeof(shmSM[i].rbuff));
+        memset(&shmSM[i].swnd, 0, sizeof(shmSM[i].swnd));
+        memset(&shmSM[i].rwnd, 0, sizeof(shmSM[i].rwnd));
+        shmSM[i].swnd.size = 5;
+        shmSM[i].rwnd.size = 5;
+        shmSM[i].swnd.base = 0;
+        shmSM[i].rwnd.base = 0;
+        shmSM[i].currSeq = 0;
+        shmSM[i].currExpSeq = 0;
+        shmSM[i].lastAck = 15;
+        shmSM[i].lastPut = 0;
+        shmSM[i].lastGet = 0;
+        shmSM[i].toConsume = 0;
+        shmSM[i].hasSentClose = 0;
+        shmSM[i].triesPostWait = 0;
     }
 
     return NULL;

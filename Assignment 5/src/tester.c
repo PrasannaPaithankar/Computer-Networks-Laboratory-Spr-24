@@ -1,4 +1,4 @@
-#include "msocket.h"
+#include "../include/msocket.h"
 
 FILE *file;
 
@@ -35,6 +35,7 @@ int main(int argc, char *argv[])
         fprintf(file, "%d,%d\n", data[0], data[1]);
         printf("%d,%d\n", data[0], data[1]);
         fflush(file);
+        fflush(stdout);
         sleep(2*T);
     }
 

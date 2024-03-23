@@ -1,0 +1,211 @@
+/*
+ *  Author:     Prasanna Paithankar
+ *  Roll No.:   21CS30065
+ *  Course:     Computer Networks Laboratory (CS39006) Spr 2023-24
+ *  Date:       23/03/2024
+
+ *  File:       documentation.txt
+ *  Purpose:    Contains the documentation for the assignment 5.
+ *  GitHub:     https://github.com/PrasannaPaithankar/Computer-Networks-Laboratory-Spr-24/  (private repository)
+ */
+
+Note: This is not GPT generated :)
+
+Assignment 5: Emulating End-to-End Reliable Flow Control over Unreliable Communication Channels
+-----------------------------------------------------------------------------------------------
+
+1. The MTP (My Transfer Protocol) is a simple protocol that provides reliable data transfer over an unreliable UDP channel.
+
+    > Features other than mentioned in assignment:
+        a. `m_close(int sockfd)`: This function closes the MTP socket. Works by sending a `CLOSEEND` message to the destination after clearing the send buffer. It then waits for the `CLOSEACKEND` message from the destination to close the connection.
+
+        b. `tester.c` to automate the testing of the protocol. It generates test cases for different drop message probabilities and calculates the average number of transmissions required to send a message.
+
+        c. ToDo: Make a proper systemd daemon for the initmsocket.
+
+
+    > Setup using Makefile:
+        a. `make`: Compiles the source files and creates the libmsocket.a and other executables (tester, initmsocket, user1, user2).
+
+        b. `sudo make install`: Make the libmsocket.a library available to the system.
+
+        c. `sudo make uninstall`: Removes the libmsocket.a library from the system.
+
+        d. `make clean`: Removes the compiled files and executables.
+
+        e. `make tar`: Creates a tarball of the source and library files.
+
+
+    > Usage:
+        a. `./bin/initmsocket &`: Initializes the MTP daemon.
+
+        b. `./bin/tester <filename> <p>`: Tests the protocol using the test cases generated from the file. The filename parameter is the name of the file containing the test cases, and the p parameter is the drop message probability.
+
+        c. `./bin/user1 <src_port> <dest_port> <dest_ip>`: Creates a MTP socket and sends messages to the destination. The src_port parameter is the source port number, the dest_port parameter is the destination port number, and the dest_ip parameter is the destination IP address.
+
+        d. `./bin/user2 <src_port> <dest_port> <dest_ip>`: Creates a MTP socket and receives messages from the source. The src_port parameter is the source port number, the dest_port parameter is the destination port number, and the dest_ip parameter is the destination IP address.
+    
+
+    > Protocol & message formats:
+        As directed by the assignment and uses cumulative ACK when a messages are recieved out-of-order. The protocol uses the following message formats:
+
+        a. `MSG<seq_num><data>END`: This message is used to send data from the source to the destination. The 4 bit seq_num parameter is the sequence number of the message.
+
+        b. `ACK<seq_num><rwnd_size>END`: This message is used to acknowledge the receipt of a message. The 4 bit seq_num parameter is the sequence number of the message being acknowledged, and the 4 bit rwnd_size parameter is the receiver window size.
+
+        c. `CLOSEEND`: This message is used to close the connection from the source side.
+
+        d. `CLOSEACKEND`: This message is used to acknowledge the receipt of the CLOSEEND message and close the connection from the destination side.
+
+        An initmsocket daemon needs to be running to handle the messages and maintain the state of the connections. Maximum of 25 connections can be handled at a time.
+
+
+    > Architecture:
+         ______________________________________________________
+        |                                                      |
+        |     -------------                                    |
+        |    | initmsocket | (daemon) <----> tester            |
+        |     -------------                                    |
+        |        |        \____                                |
+        |        |             \____                           |    (Machine 1)
+        |        |                  |                          |
+        |        v                  v                          |
+        |     -----------          -----------                 |
+        |    | userprog1 | <----> | userprog2 |                |
+        |     -----------          -----------                 |
+        |______________________________________________________|
+
+                ^                        ^
+                | (MTP)                  | (MTP)
+                v                        v
+         ______________________________________________________
+        |                                                      |
+        |     -----------          -----------                 |
+        |    | userprog3 | <----> | userprog4 |                |
+        |     -----------          -----------                 |
+        |        |__              ___|                         |
+        |           \__        __/                             |    (Machine 2)
+        |              |      |                                |
+        |              v      v                                |
+        |            -------------                             |  
+        |           | initmsocket | (daemon) <----> tester     |
+        |            -------------                             |
+        |______________________________________________________|
+
+
+
+    > Library functions:
+        a. `m_socket(int domain, int type, int protocol)`: This function creates a MTP socket and returns a file descriptor that can be used to refer to the socket in subsequent function calls. The type parameter is always set to SOCK_MTP (macro defined in library), and the protocol parameter is always set to 0.
+
+        b. `m_bind(int sockfd, const struct srcaddr *srcaddr, socklen_t srcaddrlen, const struct destaddr *destaddr, socklen_t destaddrlen)`: This function binds the MTP socket to the source and creates a pseudo-connection with the destination. The srcaddr and destaddr parameters are the source and destination addresses, respectively. The srcaddrlen and destaddrlen parameters are the sizes of the source and destination addresses, respectively.
+
+        c. `m_sendto(int sockfd, const void *buf, size_t len, int flags, const struct destaddr *destaddr, socklen_t destaddrlen)`: This function sends a message to the destination. The buf parameter is a pointer to the message to be sent, and the len parameter is the size of the message. The flags parameter is always set to 0. The destaddr and destaddrlen parameters are the destination address and the size of the destination address, respectively.
+
+        d. `m_recvfrom(int sockfd, void *buf, size_t len, int flags, struct srcaddr *srcaddr, socklen_t *srcaddrlen)`: This function receives a message from the source. The buf parameter is a pointer to the buffer where the message will be stored, and the len parameter is the size of the buffer. The flags parameter is always set to 0. The srcaddr and srcaddrlen parameters are the source address and the size of the source address, respectively.
+
+        e. `m_close(int sockfd)`: This function closes the MTP socket.
+
+        f. `logger(const char *format, ...)`: This function logs the message to the console. The format parameter is a format string, and the ... parameter is a variable number of arguments.
+
+        g. `fetchTest(float p, int *arr)`: This function fetches the test cases for the given drop message probability p. The arr[0] contains the number of messages generated from the file, and arr[1] contains the total number of transmissions that are made to send the message.
+    
+
+    > Library macros:
+        a. `SOCK_MTP`: This macro is used to specify the type parameter in the m_socket function.
+
+        b. `MAX_MSG_SIZE`: This macro is used to specify the maximum size of the message that can be sent.
+
+        c. `MAX_BUF_SIZE`: This macro is used to specify the maximum size of the buffer that can be used to store the message.
+
+        // Other internal macros can be found in the `msocket.h` header file.
+
+    > Library structures:
+        None for user utitlization.
+
+        // Internal structures
+        a.  struct SM
+            {
+                int                 isFree;             // 0: allocated, 1: free
+                pid_t               pid;                // PID of the process that created the socket
+                int                 UDPfd;              // UDP socket file descriptor
+                struct sockaddr_in  addr;               // Address of the other end
+                char                sbuff[10][1024];    // Send buffer
+                char                rbuff[10][1024];    // Receive buffer
+                struct window       swnd;               // Send window
+                int                 currSeq;            // Current sequence number
+                struct window       rwnd;               // Receive window
+                int                 currExpSeq;         // Current expected sequence number
+                int                 lastAck;            // Last acknowledged sequence number
+                int                 lastPut;            // Last index where a message was put in the send buffer
+                int                 lastGet;            // Last index where a message was got from the receive buffer
+                int                 toConsume;          // No of messages to consume
+                int                 hasSentClose;       // 0: not sent, 1: sent
+                int                 triesPostWait;      // Number of tries after waiting for send buffer to be empty
+            };
+
+        b.  struct window
+            {
+                int                 size;               // for swnd: max number of messages that can be sent w/o ack; for rwnd: max number of messages that can be received
+                int                 base;               // for swnd: sequence number of the first message in the window; for rwnd: sequence number of the first message expected to be received
+                time_t              timestamp[10];      // for swnd: contains the time at which the message was sent
+            };
+
+        c.  struct SOCK_INFO
+            {
+                sem_t               sem1;       // Semaphore 1
+                sem_t               sem2;       // Semaphore 2
+                int                 sockfd;     // Socket file descriptor
+                struct sockaddr_in  addr;       // Address of this machine
+                int                 err;        // Error code
+            };
+
+        d.  struct TEST_DATA
+            {
+                float               p;                  // Probability of dropping a message
+                int                 totalMessages;      // Total messages
+                int                 totalTransmissions; // Total transmissions
+            };
+
+    > Project tree
+        .
+        ├── bin
+        │   ├── initmsocket
+        │   ├── tester
+        │   ├── user1
+        │   └── user2
+        ├── documentation.txt
+        ├── include
+        │   ├── msocket.h
+        │   └── tester.h
+        ├── lib
+        │   └── libmsocket.a
+        ├── Makefile
+        ├── src
+        │   ├── initmsocket.c
+        │   ├── msocket.c
+        │   ├── tester.c
+        │   ├── user1.c
+        │   └── user2.c
+        └── logs
+            └── log.txt
+
+
+2. Test Cases (@ = total number of transmissions that are made to send the message / no. of messages generated from the file)
+
+     ----------------
+    | p       | @    |
+     ----------------
+    | 0.00    | 1.00 |
+    | 0.05    | 1.28 |
+    | 0.10    | 1.51 |
+    | 0.15    | 1.63 |
+    | 0.20    | 1.92 |
+    | 0.25    | 2.37 |
+    | 0.30    | 2.75 |
+    | 0.35    | 1.00 |
+    | 0.40    | 1.00 |
+    | 0.45    | 1.00 |
+    | 0.50    | 3.51 |
+     ----------------
+
+-----------------------------------------------------------------------------------------------

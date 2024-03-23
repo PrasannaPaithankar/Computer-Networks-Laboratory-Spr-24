@@ -34,6 +34,8 @@
     #define SOCK_MTP SOCK_DGRAM
 
     #define MAXBUFLEN 1024
+    #define MAX_MSG_SIZE 1014
+    #define MAX_BUF_SIZE 1024
     #define MAXCLOSECALLS 5
 
     #define LOGFILE "logs/log.txt"
@@ -79,6 +81,7 @@ struct SM
     int                 lastGet;            // Last index where a message was got from the receive buffer
     int                 toConsume;          // No of messages to consume
     int                 hasSentClose;       // 0: not sent, 1: sent
+    int                 triesPostWait;      // Number of tries after waiting for send buffer to be empty
 };
 
 struct SOCK_INFO
