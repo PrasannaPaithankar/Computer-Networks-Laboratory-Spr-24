@@ -55,7 +55,7 @@ dir:
 	mkdir -p $(OBJ_DIR) $(BIN_DIR) $(LOG_DIR) $(LIB_DIR) $(INC_DIR) $(LIB_OBJ_DIR)
 
 tar:
-	tar -czvf assignment5.tar.gz $(SRC_DIR) $(INC_DIR) Makefile documentation.txt
+	tar -czvf 21CS30065_Assignment5.tar.gz $(SRC_DIR) $(INC_DIR) Makefile documentation.txt
 
 run:
 	@./$(BIN_DIR)/initmsocket &
@@ -76,4 +76,4 @@ rungnome:
 	@echo "Running the programs"
 	
 clean:
-	rm -rf $(LIBRARY) $(BINARIES) $(OBJS) $(LIBOBJ) $(LIB_DIR) $(OBJ_DIR) $(BIN_DIR) assignment5.tar.gz
+	rm -rf $(LIBRARY) $(BINARIES) $(OBJS) $(LIBOBJ) $(LIB_DIR) $(OBJ_DIR) $(BIN_DIR) 21CS30065_Assignment5.tar.gz
