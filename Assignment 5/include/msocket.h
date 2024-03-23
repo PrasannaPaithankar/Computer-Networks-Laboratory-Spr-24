@@ -47,6 +47,8 @@
     #define MSG "MSG"
     #define ACK "ACK"
     #define CLOSE "CLOSE"
+    #define NOSPACEMSG "NOSPACEMSG"
+    #define NOSPACEACK "NOSPACEACK"
     #define SEQ_LEN 2
     #define POSTAMBLE "END"
 

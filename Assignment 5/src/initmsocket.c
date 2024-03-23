@@ -9,8 +9,8 @@
  *  Run:        ./initmsocket
  */
 
-// #include "../include/msocket.h"
-#include <msocket.h>
+#include "../include/msocket.h"
+// #include <msocket.h>
 
 /* Benchmarking */
 float p;
@@ -675,9 +675,39 @@ Rthread(void *arg)
                             logger(LOGFILE, "%s:%d\tClose message put in receive buffer at position: %d", __FILE__, __LINE__, shm[j].rwnd.base);
                         }
 
+                        /* Handle NOSPACEACK message */
+                        else if (memcmp(msg, NOSPACEACK, strlen(NOSPACEACK)) == 0)
+                        {
+                            logger(LOGFILE, "%s:%d\tNOSPACEACK received", __FILE__, __LINE__);
+                            nospace[j] = 0;
+                        }
+
+                        /* Handle NOSPACEMSG message */
+                        else if (memcmp(msg, NOSPACEMSG, strlen(NOSPACEMSG)) == 0)
+                        {
+                            logger(LOGFILE, "%s:%d\tNOSPACEMSG received", __FILE__, __LINE__);
+                            // send NOSPACEACK
+                            char ack[MAXBUFLEN];
+                            memset(ack, 0, sizeof(ack));
+                            strcpy(ack, NOSPACEACK);
+                            strcat(ack, POSTAMBLE);
+                            if (sendto(shm[j].UDPfd, ack, strlen(ack), 0, (struct sockaddr *)&src_addr, addrlen) == -1)
+                            {
+                                perror("sendto");
+                            }
+                            logger(LOGFILE, "%s:%d\tNOSPACEACK sent", __FILE__, __LINE__);
+                            
+                            // update the send window
+                            char data[MAXBUFLEN];
+                            memset(data, 0, sizeof(data));
+                            memcpy(data, msg + strlen(NOSPACEMSG) + SEQ_LEN, strlen(msg) - strlen(NOSPACEMSG) - strlen(POSTAMBLE) - SEQ_LEN);
+
+                            shm[j].swnd.size = atoi(data);
+                        }
+
                         else
                         {
-                            logger(LOGFILE, "%s:%d\tInvalid message type", __FILE__, __LINE__);
+                            logger(LOGFILE, "%s:%d\tInvalid message %s type", __FILE__, __LINE__, msg);
                         }
                     }
 
@@ -722,7 +752,7 @@ Rthread(void *arg)
                     {
                         char ack[MAXBUFLEN];
                         memset(ack, 0, sizeof(ack));
-                        strcpy(ack, ACK);
+                        strcpy(ack, NOSPACEMSG);
                         char sseqno[SEQ_LEN + 1];
                         if (shm[i].lastAck < 10)
                         {
@@ -742,10 +772,8 @@ Rthread(void *arg)
                             perror("sendto");
                         }
                         #ifdef DEEPLOG
-                        logger(LOGFILE, "%s:%d\tACK sent for sequence number: %d", __FILE__, __LINE__, shm[i].lastAck);
+                        logger(LOGFILE, "%s:%d\tNOSPACEMSG sent", __FILE__, __LINE__);
                         #endif
-
-                        nospace[i] = 0;
                     }
                 }
             }

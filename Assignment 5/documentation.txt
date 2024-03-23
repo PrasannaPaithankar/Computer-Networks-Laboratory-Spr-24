@@ -9,7 +9,7 @@
  *  GitHub:     https://github.com/PrasannaPaithankar/Computer-Networks-Laboratory-Spr-24/  (private repository)
  */
 
-Note: This is not GPT generated :)
+Note: This is not LLM generated :)
 
 Assignment 5: Emulating End-to-End Reliable Flow Control over Unreliable Communication Channels
 -----------------------------------------------------------------------------------------------
@@ -53,9 +53,13 @@ Assignment 5: Emulating End-to-End Reliable Flow Control over Unreliable Communi
 
         b. `ACK<seq_num><rwnd_size>END`: This message is used to acknowledge the receipt of a message. The 4 bit seq_num parameter is the sequence number of the message being acknowledged, and the 4 bit rwnd_size parameter is the receiver window size.
 
-        c. `CLOSEEND`: This message is used to close the connection from the source side.
+        c. `NOSPACE<seq_num><rwnd_size>END`: This message is used to indicate that the receiver now has some space in the receive window. The 4 bit seq_num parameter is the sequence number of the message being acknowledged, and the 4 bit rwnd_size parameter is the receiver window size.
 
-        d. `CLOSEACKEND`: This message is used to acknowledge the receipt of the CLOSEEND message and close the connection from the destination side.
+        d. `NOSPACEACKEND`: This message is used to acknowledge the receipt of the NOSPACE message.
+
+        e. `CLOSEEND`: This message is used to close the connection from the source side.
+
+        f. `CLOSEACKEND`: This message is used to acknowledge the receipt of the CLOSEEND message and close the connection from the destination side.
 
         An initmsocket daemon needs to be running to handle the messages and maintain the state of the connections. Maximum of 25 connections can be handled at a time.
 
@@ -202,9 +206,9 @@ Assignment 5: Emulating End-to-End Reliable Flow Control over Unreliable Communi
     | 0.20    | 1.92 |
     | 0.25    | 2.37 |
     | 0.30    | 2.75 |
-    | 0.35    | 1.00 |
-    | 0.40    | 1.00 |
-    | 0.45    | 1.00 |
+    | 0.35    | 3.10 |
+    | 0.40    | 2.92 |
+    | 0.45    | 2.95 |
     | 0.50    | 3.51 |
      ----------------
 

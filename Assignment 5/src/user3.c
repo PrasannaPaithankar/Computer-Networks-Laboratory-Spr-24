@@ -43,8 +43,9 @@ int main(int argc, char *argv[])
 
     printf("Socket bound to port %d\n", atoi(argv[1]));
 
-    FILE *fp = fopen("./test/rec.html", "w");
-    if (fp == NULL)
+    // FILE *fp = fopen("./test/fileimg.jpg", "w");
+    FILE *fp1 = fopen("./test/rec2.html", "w");
+    if (fp1 == NULL)
     {
         perror("fopen");
         return errno;
@@ -61,6 +62,7 @@ int main(int argc, char *argv[])
         n = -1;
         while (n == -1)
         {
+            // printf("Waiting for data...\n");
             n = m_recvfrom(M2, buf, MAXBUFLEN, 0, (struct sockaddr *)&dest_addr, sizeof(dest_addr));
             if (errno == ENOMSG)
             {
@@ -79,13 +81,14 @@ int main(int argc, char *argv[])
         
         // printf("%d: %s\n", count++, buf);
         // fflush(stdout);
-        fwrite(buf, 1, n, fp);
-        fflush(fp);
+        fwrite(buf, 1, n, fp1);
+        fflush(fp1);
 
         memset(buf, 0, MAXBUFLEN);
+        sleep(1);
     }
 
-    fclose(fp);
+    fclose(fp1);
     m_close(M2);
 
     printf("File received\n");

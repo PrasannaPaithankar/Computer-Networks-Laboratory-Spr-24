@@ -119,7 +119,7 @@ m_socket (int domain, int type, int protocol)
     close(shmidSM);
     close(shmidSOCK_INFO);
 
-    if (retval != 0)
+    if (retval == -1)
     {
         logger(LOGFILE, "%s:%d\tError creating socket: %s", __FILE__, __LINE__, strerror(errno));
     }
@@ -411,13 +411,13 @@ m_recvfrom (int sockfd, void *buf, size_t len, int flags, struct sockaddr *src_a
                     shmSM[i].rwnd.size++;
                     shmSM[i].toConsume--;
 
-                    logger(LOGFILE, "%s:%d\tReturning to user message from receive buffer at index %d", __FILE__, __LINE__, j);
+                    logger(LOGFILE, "%s:%d\tReturning to user %d message from receive buffer at index %d: %s", __FILE__, __LINE__, sockfd, j, buf);
 
                     break;
                 }
             }
             /* If no message found, return error ENOMSG */
-            if (j == shmSM[i].rwnd.base)
+            if (j == shmSM[i].lastGet)
             {
                 retval = -1;
                 errno = ENOMSG;
@@ -611,6 +611,14 @@ logger (char *fname, const char *format, ...)
 }
 
 
+/*
+ *  Function:   fetchTest
+ *  ----------------------
+ *  Description:    Fetch the total number of messages and transmissions from the shared memory
+ *  Parameters:     p = Probability of dropping the message
+ *                  arr = Array to store the total number of messages and transmissions
+ *  Returns:        int:        0 on success, -1 on error
+ */
 int
 fetchTest(float p, int *arr)
 {
