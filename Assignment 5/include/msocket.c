@@ -311,7 +311,7 @@ m_sendto (int sockfd, const void *buf, size_t len, int flags, const struct socka
                     
                     shmSM[i].currSeq = (shmSM[i].currSeq + 1) % 16;
                     shmSM[i].lastPut = (shmSM[i].lastPut + 1) % 10;
-
+                    retval = len;
                     break;
                 }
                 /* If send buffer is full, return error ENOBUFS */

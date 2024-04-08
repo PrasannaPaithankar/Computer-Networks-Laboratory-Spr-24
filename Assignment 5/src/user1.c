@@ -43,7 +43,7 @@ int main(int argc, char *argv[])
 
     printf("Socket bound to port %d\n", atoi(argv[1]));
 
-    int fd = open("./test/g.html", O_RDONLY);
+    int fd = open("./test/selfpotrait.jpg", O_RDONLY);
     if (fd == -1)
     {
         perror("open");
@@ -72,8 +72,8 @@ int main(int argc, char *argv[])
             }
         }
         memset(buf, 0, MAXBUFLEN - 10);   
+        sleep(5);
     }
-
 
     close(fd);
     m_close(M1);    

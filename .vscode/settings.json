@@ -1,5 +1,8 @@
 {
     "files.associations": {
-        "msocket.h": "c"
+        "msocket.h": "c",
+        "fcntl.h": "c",
+        "if_packet.h": "c",
+        "string.h": "c"
     }
 }
