@@ -1,21 +1,41 @@
+/*
+ *  Author:     Prasanna Paithankar
+ *  Roll No.:   21CS30065
+ *  Course:     Computer Networks Laboratory (CS39006) Spr 2023-24
+ *  Date:       08/04/2024
+
+ *  File:       simDNSServer.c
+ *  Compile:    gcc -o simDNSServer simDNSServer.c
+ *  Run:        ./simDNSServer -i <interface>
+ */
+
 #include "../include/simDNS.h"
 
-void signalHandler(int signum)
+FILE *fp;
+
+void
+signalHandler(int signum)
 {
     if (signum == SIGINT)
     {
-        write(1, "\nsimDNS Server shutting down...\n", 32);
+        write(1, "\nsimDNSServer shutting down...\n", 31);
         write(1, "\nAuthor: Prasanna Paithankar\n", 29);
         exit(0);
     }
 }
 
-int dropmessage(float prob)
+
+// Function to drop a message with a given probability
+int
+dropmessage(float prob)
 {
     return (rand() < prob * RAND_MAX);
 }
 
-void processQuery(struct SimDNSQuery *query, struct SimDNSResponse *response)
+
+// Function to process the query and generate the response
+void
+processQuery(struct SimDNSQuery *query, struct SimDNSResponse *response)
 {
     struct hostent *host;
     int i;
@@ -35,40 +55,76 @@ void processQuery(struct SimDNSQuery *query, struct SimDNSResponse *response)
         memcpy(sizeOfDomainName, query->queries[i].domainName, 4);
         sizeOfDomainName[4] = '\0';
         int size = atoi(sizeOfDomainName);
-        printf("Size: %d\n", size);
 
         // Get the domain name
         memcpy(domainName, query->queries[i].domainName + 4, size);
         domainName[size] = '\0';
-        printf("Domain Name: %s\n", domainName);
 
         // Get the IP address
         host = gethostbyname(domainName);
 
         if (host == NULL)
         {
+            fprintf(fp, "Could not resolve %s\n", domainName);
             response->responses[i].valid = 0;
             response->responses[i].ipAddress = 0;
         }
         else
         {
-            printf("IP Address: %s\n", inet_ntoa(*(struct in_addr *)host->h_addr_list[0]));
+            fprintf(fp, "Resolved %s to %s\n", domainName, inet_ntoa(*(struct in_addr *)host->h_addr_list[0]));
             response->responses[i].valid = 1;
             response->responses[i].ipAddress = ((struct in_addr *)host->h_addr_list[0])->s_addr;
         }
 
-        // Increment the number of responses
         response->numResponses++;
     }
 
+    fflush(fp);
     return;
 }
 
 
-int main() 
+int
+main(int argc, char *argv[])
 {
+    // Client cache
+    struct ClientCache clientCache[100];
+    int numClients = 0;
+
+    // Open the log file
+    fp = fopen("logs/simDNSServer.log", "a");
+    if (fp == NULL)
+    {
+        perror("fopen() failed");
+        exit(1);
+    }
+    fprintf(fp, "simDNSServer started\n");
+
     // Register the signal handler
     signal(SIGINT, signalHandler);
+
+    // Parse arguments
+    int opt;
+    char *interface;
+    int interfaceFlag = 0;
+
+    while ((opt = getopt(argc, argv, "i:")) != -1)
+    {
+        switch (opt)
+        {
+        case 'i':
+            interface = optarg;
+            interfaceFlag = 1;
+            break;
+        default:
+            printf("Usage: %s -d <destination IP> -i <interface>\n", argv[0]);
+            return 1;
+        }
+    }
+    if (interfaceFlag == 0)
+    {
+        interface = "lo";
+    }
     
     // Create a raw socket
     int rawSocket = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL));
@@ -82,7 +138,7 @@ int main()
     memset(&sll, 0, sizeof(sll));
     sll.sll_family = AF_PACKET;
     sll.sll_protocol = htons(ETH_P_ALL);
-    sll.sll_ifindex = if_nametoindex("lo");
+    sll.sll_ifindex = if_nametoindex(interface);
     inet_pton(AF_INET, "127.0.0.1", sll.sll_addr);
 
     if (bind(rawSocket, (struct sockaddr *)&sll, sizeof(sll)) == -1) {
@@ -91,9 +147,16 @@ int main()
         exit(1);
     }
 
+    printf("simDNSServer started...\n");
+    printf("Interface: %s\n", interface);
+    printf("Server log: logs/simDNSServer.log\n");
+    printf("Press Ctrl+C to shutdown\n");
+
     // Read all the packets that are received to this socket
     while (1)
     {
+        fflush(fp);
+
         struct ether_header *ethHeader;
         struct iphdr *ipHeader;
         struct SimDNSQuery *simDNSQuery;
@@ -122,27 +185,62 @@ int main()
         {
             continue;
         }
-        printf("Received a packet\n");
         
-
         // If the protocol field is 254, then read the query header
         simDNSQuery = (struct SimDNSQuery *)(buffer + sizeof(struct ether_header) + sizeof(struct iphdr));
 
         // If it is a simDNS query, then parse the query strings
         if (simDNSQuery->messageType == 0)
         {
+            if (dropmessage(P))
+            {
+                fprintf(fp, "Dropped query from client %s\n", inet_ntoa(*(struct in_addr *)&ipHeader->saddr));
+                continue;
+            }
+
+            // Check if the client is already in the cache
+            int i;
+            int clientFound = 0;
+            for (i = 0; i < numClients; i++)
+            {
+                if (clientCache[i].ipAddress == ipHeader->saddr)
+                {
+                    clientFound = 1;
+                    break;
+                }
+            }
+
+            if (clientFound == 1)
+            {
+                if (clientCache[i].id == simDNSQuery->id)
+                {
+                    fprintf(fp, "Caught duplicate\n");
+                    continue;
+                }
+                else
+                {
+                    clientCache[i].id = simDNSQuery->id;
+                }
+            }
+            else
+            {
+                clientCache[numClients].ipAddress = ipHeader->saddr;
+                clientCache[numClients].id = simDNSQuery->id;
+                numClients++;
+            }
+
+            fprintf(fp, "Received query from client %s\n", inet_ntoa(*(struct in_addr *)&ipHeader->saddr));
+
             // Generate a simDNS response
             processQuery(simDNSQuery, &response);
 
-            // Send the simDNS response to the client which had sent the query (you can find out the client IP address from the IP header). 
-            // The response should be sent to the client using the raw socket.
-            // create the ethernet header
+            // Create the Ethernet header
             struct ether_header ethHeaderResponse;
             memcpy(ethHeaderResponse.ether_dhost, ethHeader->ether_shost, 6);
             memcpy(ethHeaderResponse.ether_shost, ethHeader->ether_dhost, 6);
             ethHeaderResponse.ether_type = htons(ETH_P_IP);
 
-            // create the IP header
+            // Create the IP header
             struct iphdr ipHeaderResponse;
             ipHeaderResponse.version = 4;
             ipHeaderResponse.ihl = 5;
@@ -156,35 +254,32 @@ int main()
             ipHeaderResponse.saddr = ipHeader->daddr;
             ipHeaderResponse.daddr = ipHeader->saddr;
 
-            // create the simDNS response
+            // Create the simDNS response
             char responseBuffer[sizeof(struct SimDNSResponse)];
             memcpy(responseBuffer, &response, sizeof(struct SimDNSResponse));
 
-            // create the packet
+            // Create the packet
             char *packet = (char *)malloc(sizeof(struct ether_header) + sizeof(struct iphdr) + sizeof(struct SimDNSResponse));
             memcpy(packet, &ethHeaderResponse, sizeof(struct ether_header));
             memcpy(packet + sizeof(struct ether_header), &ipHeaderResponse, sizeof(struct iphdr));
             memcpy(packet + sizeof(struct ether_header) + sizeof(struct iphdr), responseBuffer, sizeof(struct SimDNSResponse));
 
-            // if (dropmessage(1))
-            // {
-            //     printf("Dropping the packet\n");
-            //     continue;
-            // }
-
-            // send the packet
+            // Send the packet
             if (send(rawSocket, packet, sizeof(struct ether_header) + sizeof(struct iphdr) + sizeof(struct SimDNSResponse), 0) < 0)
             {
                 perror("Send failed");
                 exit(1);
             }
 
-            // free the packet
+            printf("Served client %s\n", inet_ntoa(*(struct in_addr *)&ipHeader->saddr));
+            fprintf(fp, "Served client %s\n", inet_ntoa(*(struct in_addr *)&ipHeader->saddr));
+
+            // Garbage collection
             free(packet);
         }
     }
 
-    // Close the raw socket
+    // Garbage collection
     close(rawSocket);
 
     return 0;

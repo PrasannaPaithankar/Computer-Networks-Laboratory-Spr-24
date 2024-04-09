@@ -5,7 +5,7 @@
  *  Date:       23/03/2024
 
  *  File:       documentation.txt
- *  Purpose:    Contains the documentation for the assignment 5.
+ *  Purpose:    Contains the documentation for the assignment 5
  *  GitHub:     https://github.com/PrasannaPaithankar/Computer-Networks-Laboratory-Spr-24/  (private repository)
  */
 

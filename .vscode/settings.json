@@ -3,6 +3,8 @@
         "msocket.h": "c",
         "fcntl.h": "c",
         "if_packet.h": "c",
-        "string.h": "c"
+        "string.h": "c",
+        "ip_icmp.h": "c",
+        "unistd.h": "c"
     }
 }

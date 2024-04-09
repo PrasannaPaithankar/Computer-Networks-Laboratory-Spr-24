@@ -1,0 +1,44 @@
+/*
+ *  Author:     Prasanna Paithankar
+ *  Roll No.:   21CS30065
+ *  Course:     Computer Networks Laboratory (CS39006) Spr 2023-24
+ *  Date:       08/04/2024
+
+ *  File:       README
+ *  Purpose:    Contains the documentation for the assignment 6
+ *  GitHub:     https://github.com/PrasannaPaithankar/Computer-Networks-Laboratory-Spr-24/  (private repository)
+ */
+
+Assignment 6: Implementing a Custom Protocol using Raw Sockets
+--------------------------------------------------------------
+
+1. Setup using Makefile:
+    - Run `make` to compile the code.
+    - Run `make clean` to remove the compiled files.
+    - Run `make tar` to create a tarball of the source code.
+
+2. simDNSServer:
+    - This is the server program that listens for DNS requests from simDNSClient.
+    - Run the server using `sudo ./simDNSServer -i <interface>` where `<interface>` is optional.
+    - The server will print the incoming requests and the responses in a log file `log/simDNSServer.log`.
+
+3. simDNSClient:
+    - This is the client program that sends DNS requests to simDNSServer.
+    - Run the client using `sudo ./simDNSClient -i <interface> -d <destination IP>` where `<interface>` and `<destination IP>` are optional.
+    
+4. Extra Features:
+    - Finds the MAC address of the destination IP by pinging the destination using ICMP echo request and then checking the ARP cache.
+
+5. Project tree
+    .
+    ├── Makefile
+    ├── README
+    ├── include
+    │   └── simDNS.h
+    ├── src
+    │   ├── simDNSServer.c
+    │   └── simDNSClient.c
+    └── logs
+        └── simDNSServer.log
+
+--------------------------------------------------------------

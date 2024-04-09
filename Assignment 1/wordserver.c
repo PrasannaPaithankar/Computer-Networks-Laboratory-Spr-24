@@ -50,18 +50,8 @@ int main(int argc, char *argv[])
     FILE *fp;
     struct sockaddr_in servaddr, cliaddr;
 
-    // Override SIGINT handler with sigaction
-    struct sigaction act = {
-        .sa_handler = sigintHandler,
-        .sa_flags = 0,
-        .sa_mask = 0
-    };
-
-    if (sigaction(SIGINT, &act, NULL) < 0)
-    {
-        perror("sigaction");
-        exit(1);
-    }
+    // Override SIGINT handler
+    signal(SIGINT, sigintHandler);
 
     // Creating socket file descriptor
     if ((sockfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0)
