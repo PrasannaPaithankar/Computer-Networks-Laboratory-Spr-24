@@ -14,6 +14,8 @@
 #include <unistd.h>
 #include <string.h>
 #include <signal.h>
+#include <errno.h>
+#include <getopt.h>
 #include <sys/types.h>
 #include <sys/socket.h> 
 #include <netinet/in.h>
@@ -55,17 +57,7 @@ int main(int argc, char *argv[])
     struct sockaddr_in cli_addr, serv_addr;
     int filename[100];
 
-    struct sigaction act = {
-        .sa_handler = sigintHandler,
-        .sa_flags = 0,
-        .sa_mask = 0
-    };
-    
-    if (sigaction(SIGINT, &act, NULL) < 0)
-    {
-        perror("sigaction");
-        exit(1);
-    }
+    signal(SIGINT, sigintHandler);
 
     int i;
     char buf[100];

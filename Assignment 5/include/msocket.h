@@ -8,6 +8,9 @@
  *  Purpose:    Header file for the msocket library
  */
 
+#define _XOPEN_SOURCE 600
+#define _GNU_SOURCE
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

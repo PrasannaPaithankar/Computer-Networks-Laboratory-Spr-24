@@ -30,6 +30,7 @@
 #include <linux/if.h>
 #include <sys/select.h>
 #include <errno.h>
+#include <getopt.h>
 
 #define P 0.0   // Probability of packet loss
 

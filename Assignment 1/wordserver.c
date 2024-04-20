@@ -14,6 +14,7 @@
 #include <unistd.h>
 #include <string.h>
 #include <signal.h>
+#include <getopt.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>

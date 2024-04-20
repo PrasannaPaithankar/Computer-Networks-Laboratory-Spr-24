@@ -12,6 +12,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <errno.h>
+#include <getopt.h>
 #include <string.h>
 #include <signal.h>
 #include <sys/types.h>
@@ -53,17 +55,7 @@ int main(int argc, char *argv[])
     char fileName[100];
     char efileName[100];
 
-    struct sigaction act = {
-        .sa_handler = sigintHandler,
-        .sa_flags = 0,
-        .sa_mask = 0
-    };
-
-    if (sigaction(SIGINT, &act, NULL) < 0)
-    {
-        perror("sigaction");
-        exit(1);
-    }
+    signal(SIGINT, sigintHandler);
 
     int i;
     char buf[100];
